@@ -53,6 +53,7 @@ sub run {
     my @targets = $self->backups2delete;
     use Data::Dumper;
     warn Dumper \@targets;
+    say $self->mount_point;
 }
 
 sub backups2delete {
@@ -68,6 +69,25 @@ sub backups2delete {
         my $backup_date = Time::Piece->strptime($paths[-1], '%Y-%m-%d-%H%M%S');
         $self->before_tp > $backup_date;
     } @backups;
+}
+
+sub mount_point {
+    my $self = shift;
+
+    $self->{mount_point} ||= sub {
+        my @lines = `tmutil destinationinfo`;
+        if ($? != 0) {
+            die "failed to execute `tmutil destinationinfo`: $?\n";
+        }
+        for my $line (@lines) {
+            chomp $line;
+            my ($key, $val) = split /\s+:\s+/, $line, 2;
+            if ($key eq 'Mount Point') {
+                return $val;
+            }
+        }
+        die "no mount points found\n";
+    }->();
 }
 
 sub before_tp {
