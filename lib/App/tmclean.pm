@@ -18,7 +18,7 @@ use Time::Seconds ();
 sub logf {
     my $msg = shift;
        $msg = sprintf($msg, @_);
-    my $prefix = '[tmclan]' . Time::Piece->localtime->strftime('[%Y-%m-%d %H:%M:%S] ');
+    my $prefix = '[tmclean]' . Time::Piece->localtime->strftime('[%Y-%m-%d %H:%M:%S] ');
     $msg .= "\n" if $msg !~ /\n$/;
     print STDERR $prefix . $msg;
 }
