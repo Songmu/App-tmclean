@@ -4,7 +4,18 @@ tmclean - cleanup TimeMachine
 
 # SYNOPSIS
 
-    % tmclean [--dry-run] [-days=300/-before=2018/01/01]
+    % tmclean [--dry-run] [--days=300/--before=2018/01/01]
+
+## Options
+
+- --dry-run
+- --days
+
+    Delete backups that before the specified number of days (default: 366)
+
+- --before
+
+    Delete backups before the specified date
 
 # DESCRIPTION
 

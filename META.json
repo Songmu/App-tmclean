@@ -56,6 +56,17 @@
       }
    },
    "release_status" : "unstable",
+   "resources" : {
+      "bugtracker" : {
+         "web" : "https://github.com/Songmu/App-tmclean/issues"
+      },
+      "homepage" : "https://github.com/Songmu/App-tmclean",
+      "repository" : {
+         "type" : "git",
+         "url" : "git://github.com/Songmu/App-tmclean.git",
+         "web" : "https://github.com/Songmu/App-tmclean"
+      }
+   },
    "version" : "v0.0.1",
    "x_authority" : "cpan:SONGMU",
    "x_serialization_backend" : "JSON::PP version 2.27400_02",
