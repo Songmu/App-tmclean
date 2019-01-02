@@ -6,7 +6,6 @@ use version 0.77; our $VERSION = version->declare("v0.0.1");
 
 use Getopt::Long qw/GetOptions :config posix_default no_ignore_case bundling auto_help/;
 use Pod::Usage qw/pod2usage/;
-use Hash::Rename qw/hash_rename/;
 use Class::Accessor::Lite (
     new => 1,
     ro  => [qw/before days dry_run/],
@@ -40,7 +39,7 @@ sub parse_options {
         dry-run
     /) or pod2usage(2);
 
-    hash_rename %opt, code => sub {tr/-/_/};
+    $opt{dry_run} = delete $opt{'dry-run'};
     return (\%opt, \@ARGV);
 }
 
