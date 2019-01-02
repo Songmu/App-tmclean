@@ -54,6 +54,7 @@ sub run {
     use Data::Dumper;
     warn Dumper \@targets;
     say $self->mount_point;
+    say $self->machine_name;
 }
 
 sub backups2delete {
@@ -88,6 +89,19 @@ sub mount_point {
         }
         die "no mount points found\n";
     }->();
+}
+
+sub machine_name {
+    my $self = shift;
+
+    $self->{machine_name} ||= do {
+        chomp(my $hostname = `hostname`);
+        if ($? != 0) {
+            die "failed to execute `hostname`: $?\n";
+        }
+        $hostname =~ s/\.local$//;
+        $hostname;
+    };
 }
 
 sub before_tp {
