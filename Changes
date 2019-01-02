@@ -1,6 +1,8 @@
 Revision history for Perl extension App-tmclean
 
 {{$NEXT}}
+
+v0.0.3 2019-01-02T18:48:51Z
     - trap exception around strptime
 
 v0.0.2 2019-01-02T18:31:11Z

@@ -66,7 +66,7 @@
          "web" : "https://github.com/Songmu/App-tmclean"
       }
    },
-   "version" : "v0.0.2",
+   "version" : "v0.0.3",
    "x_authority" : "cpan:SONGMU",
    "x_serialization_backend" : "JSON::PP version 2.27400_02",
    "x_static_install" : 1
