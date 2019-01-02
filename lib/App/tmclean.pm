@@ -50,8 +50,8 @@ sub run {
     if (!$self->dry_run && $ENV{USER} ne 'root') {
         die "tmutil requires root privileges\n";
     }
-    $self->cmd('tmutil', 'stopbackup');
-    $self->cmd('tmutil', 'disable'); # need sudo
+    $self->cmd(qw/tmutil stopbackup/);
+    $self->cmd(qw/tmutil disable/); # need sudo
 
     my @targets = $self->backups2delete;
     unless (@targets) {
@@ -62,14 +62,14 @@ sub run {
 
     logf "following backups to be deleted:\n  %s", join("\n  ", @targets);
     for my $bak (@targets) {
-        $self->cmd('tmutil', 'delete', $bak); # need sudo
+        $self->cmd(qw/tmutil delete/, $bak); # need sudo
     }
     my $dev_name = dev_name($targets[0]);
-    $self->cmd('hdiutil', 'detach', $dev_name);
+    $self->cmd(qw/hdiutil detach/, $dev_name);
 
     my $sparsebundle_path = sprintf '%s/%s.sparsebundle', $mount_point, $self->machine_name;
-    $self->cmd('hdiutil', 'compact', $sparsebundle_path); # need sudo
-    $self->cmd('tmutil', 'enable'); # need sudo
+    $self->cmd(qw/hdiutil compact/, $sparsebundle_path); # need sudo
+    $self->cmd(qw/tmutil enable/); # need sudo
 }
 
 sub backups2delete {
