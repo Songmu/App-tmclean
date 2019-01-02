@@ -1,6 +1,7 @@
 Revision history for Perl extension App-tmclean
 
 {{$NEXT}}
+    - trap exception around strptime
 
 v0.0.2 2019-01-02T18:31:11Z
     - fix log prefix typo
