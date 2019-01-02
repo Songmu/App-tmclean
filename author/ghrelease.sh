@@ -15,3 +15,5 @@ cp $app Changes README.md LICENSE $archive_base
 zip -r $dist_dir/$archive_base.zip $archive_base
 
 rm -rf $archive_base
+
+ghr $ver dist/$ver
