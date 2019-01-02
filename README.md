@@ -1,14 +1,22 @@
 # NAME
 
-App::tmclean - It's new $module
+tmclean - cleanup TimeMachine
 
 # SYNOPSIS
 
-    use App::tmclean;
+    % tmclean [--dry-run] [-days=300/-before=2018/01/01]
 
 # DESCRIPTION
 
-App::tmclean is ...
+tmclean is command line utility for cleanup TimeMachine.
+
+# INSTALLATION
+
+    % cpanm App::tmclean
+
+or you can get single packed executable file.
+
+    % curl -L https://raw.githubusercontent.com/Songmu/App-tmclean/master/tmclean > /usr/local/bin/tmclean; chmod +x /usr/local/bin/tmclean
 
 # LICENSE
 

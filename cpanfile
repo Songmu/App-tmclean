@@ -1,6 +1,16 @@
-requires 'perl', '5.008001';
+requires 'Class::Accessor::Lite';
+requires 'HTTP::Date';
+requires 'Hash::Rename';
+requires 'perl', '5.010';
 
-on 'test' => sub {
+on configure => sub {
+    requires 'Module::Build::Tiny', '0.035';
+};
+
+on test => sub {
     requires 'Test::More', '0.98';
 };
 
+on develop => sub {
+    requires 'App::FatPacker::Simple', '0.04';
+};

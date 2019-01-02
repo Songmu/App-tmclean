@@ -5,6 +5,7 @@
 /blib
 /Makefile
 /pm_to_blib
+/fatlib
 
 /carton.lock
 /.carton/
