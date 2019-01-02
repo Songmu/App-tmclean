@@ -47,7 +47,7 @@ sub run {
     my $self = shift;
 
     if (!$self->dry_run && $ENV{USER} ne 'root') {
-        die 'tmutil requires root privileges';
+        die "tmutil requires root privileges\n";
     }
     $self->cmd('tmutil', 'stopbackup');
     $self->cmd('tmutil', 'disable'); # need sudo

@@ -14,7 +14,7 @@ tmclean - cleanup TimeMachine
 
 =head1 SYNOPSIS
 
-    % tmclean
+    % tmclean [--dry-run] [-days=300/-before=2018/01/01]
 
 =head1 DESCRIPTION
 
