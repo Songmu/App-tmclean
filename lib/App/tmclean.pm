@@ -46,7 +46,9 @@ sub parse_options {
 sub run {
     my $self = shift;
 
-    # XXX needs check sudo?
+    if (!$self->dry_run && $ENV{USER} ne 'root') {
+        die 'tmutil requires root privileges';
+    }
     $self->cmd('tmutil', 'stopbackup');
     $self->cmd('tmutil', 'disable'); # need sudo
 
