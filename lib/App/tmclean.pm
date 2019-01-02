@@ -1,6 +1,9 @@
 package App::tmclean;
 use 5.010;
 use warnings;
+
+use version 0.77; our $VERSION = version->declare("v0.0.1");
+
 use Getopt::Long qw/GetOptions :config posix_default no_ignore_case bundling auto_help/;
 use Pod::Usage qw/pod2usage/;
 use Hash::Rename qw/hash_rename/;
@@ -11,8 +14,6 @@ use Class::Accessor::Lite (
 use HTTP::Date qw/str2time/;
 use Time::Piece ();
 use Time::Seconds ();
-
-our $VERSION = "0.01";
 
 sub logf {
     my $msg = shift;
