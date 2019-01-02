@@ -1,6 +1,7 @@
 Revision history for Perl extension App-tmclean
 
 {{$NEXT}}
+    - fix log prefix typo
 
 v0.0.1 2019-01-02T15:49:59Z
 
