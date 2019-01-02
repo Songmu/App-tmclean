@@ -14,6 +14,14 @@ use Time::Seconds ();
 
 our $VERSION = "0.01";
 
+sub logf {
+    my $msg = shift;
+       $msg = sprintf($msg, @_);
+    my $prefix = '[tmclan]' . Time::Piece->localtime->strftime('[%Y-%m-%d %H:%M:%S] ');
+    $msg .= "\n" if $msg !~ /\n$/;
+    print STDERR $prefix . $msg;
+}
+
 sub new_with_options {
     my ($class, @argv) = @_;
 
@@ -37,7 +45,11 @@ sub parse_options {
 
 sub run {
     my $self = shift;
-    print $self->before_tp . "\n";
+
+    # XXX check sudo?
+    $self->cmd('tmutil', 'stopbackup');
+    $self->cmd('tmutil', 'disable'); # need sudo
+
 }
 
 sub before_tp {
@@ -50,6 +62,16 @@ sub before_tp {
     }
     my $days = $self->days || 366;
     return Time::Piece->localtime() - Time::Seconds::ONE_DAY() * $days;
+}
+
+sub cmd {
+    my ($self, @command) = @_;
+
+    my $cmd_str = join(' ', @command);
+    logf 'execute%s: `%s`', $self->dry_run ? '(dry-run)' : '', $cmd_str;
+    if (!$self->dry_run) {
+        !system(@command) or die "failed to execute command: $cmd_str: $?\n";
+    }
 }
 
 1;
