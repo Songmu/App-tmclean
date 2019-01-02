@@ -81,8 +81,8 @@ sub backups2delete {
     return grep {
         chomp;
         my @paths = split m!/!, $_;
-        my $backup_date = Time::Piece->strptime($paths[-1], '%Y-%m-%d-%H%M%S');
-        $self->before_tp > $backup_date;
+        my $backup_date = eval { Time::Piece->strptime($paths[-1], '%Y-%m-%d-%H%M%S') };
+        $backup_date && $self->before_tp > $backup_date;
     } @backups;
 }
 
