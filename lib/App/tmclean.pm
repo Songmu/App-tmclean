@@ -51,10 +51,22 @@ sub run {
     $self->cmd('tmutil', 'disable'); # need sudo
 
     my @targets = $self->backups2delete;
-    use Data::Dumper;
-    warn Dumper \@targets;
-    say $self->mount_point;
-    say $self->machine_name;
+    unless (@targets) {
+        logf 'no deletion targets found';
+        return 0;
+    }
+    my $mount_point = $self->mount_point;
+
+    logf "following backups to be deleted:\n  %s", join("\n  ", @targets);
+    for my $bak (@targets) {
+        $self->cmd('tmutil', 'delete', $bak); # need sudo
+    }
+    my $dev_name = dev_name($targets[0]);
+    $self->cmd('hdiutil', 'detach', $dev_name);
+
+    my $sparsebundle_path = sprintf '%s/%s.sparsebundle', $mount_point, $self->machine_name;
+    $self->cmd('hdiutil', 'compact', $sparsebundle_path); # need sudo
+    $self->cmd('tmutil', 'enable'); # need sudo
 }
 
 sub backups2delete {
@@ -89,6 +101,12 @@ sub mount_point {
         }
         die "no mount points found\n";
     }->();
+}
+
+sub dev_name {
+    my $path = shift;
+    my @paths = split m!/!, $path;
+    join '/', @paths[0..2];
 }
 
 sub machine_name {
