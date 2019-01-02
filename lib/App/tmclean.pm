@@ -1,5 +1,5 @@
 package App::tmclean;
-use strict;
+use 5.010;
 use warnings;
 use Getopt::Long qw/GetOptions :config posix_default no_ignore_case bundling auto_help/;
 use Pod::Usage qw/pod2usage/;
@@ -46,22 +46,42 @@ sub parse_options {
 sub run {
     my $self = shift;
 
-    # XXX check sudo?
+    # XXX needs check sudo?
     $self->cmd('tmutil', 'stopbackup');
     $self->cmd('tmutil', 'disable'); # need sudo
 
+    my @targets = $self->backups2delete;
+    use Data::Dumper;
+    warn Dumper \@targets;
+}
+
+sub backups2delete {
+    my $self = shift;
+    my @backups = `tmutil listbackups`;
+    if ($? != 0) {
+        die "failed to execute `tmutil listbackups`: $?\n";
+    }
+    # e.g. /Volumes/Time Machine Backup/Backups.backupdb/$machine/2018-01-07-033608
+    return grep {
+        chomp;
+        my @paths = split m!/!, $_;
+        my $backup_date = Time::Piece->strptime($paths[-1], '%Y-%m-%d-%H%M%S');
+        $self->before_tp > $backup_date;
+    } @backups;
 }
 
 sub before_tp {
     my $self = shift;
 
-    if ($self->before) {
-        my $time = str2time $self->before; # str2time parses the time as localtime
-        die "unrecognized date format @{[$self->before]}" unless $time;
-        return Time::Piece->localtime($time);
-    }
-    my $days = $self->days || 366;
-    return Time::Piece->localtime() - Time::Seconds::ONE_DAY() * $days;
+    $self->{before_tp} ||= sub {
+        if ($self->before) {
+            my $time = str2time $self->before; # str2time parses the time as localtime
+            die "unrecognized date format @{[$self->before]}" unless $time;
+            return Time::Piece->localtime($time);
+        }
+        my $days = $self->days || 366;
+        return Time::Piece->localtime() - Time::Seconds::ONE_DAY() * $days;
+    }->();
 }
 
 sub cmd {
