@@ -5,68 +5,372 @@ BEGIN {
 my %fatpacked;
 
 $fatpacked{"App/tmclean.pm"} = '#line '.(1+__LINE__).' "'.__FILE__."\"\n".<<'APP_TMCLEAN';
-  package App::tmclean;use 5.010;use warnings;use version 0.77;our$VERSION=version->declare("v0.0.3");use Getopt::Long qw/GetOptions :config posix_default no_ignore_case bundling auto_help/;use Pod::Usage qw/pod2usage/;use Class::Accessor::Lite (new=>1,ro=>[qw/before days dry_run/],);use HTTP::Date qw/str2time/;use Time::Piece ();use Time::Seconds ();sub logf {my$msg=shift;$msg=sprintf($msg,@_);my$prefix='[tmclean]' .Time::Piece->localtime->strftime('[%Y-%m-%d %H:%M:%S] ');$msg .= "\n" if$msg !~ /\n$/;print STDERR$prefix .$msg}sub new_with_options {my ($class,@argv)=@_;my ($opt)=$class->parse_options(@argv);$class->new($opt)}sub parse_options {my ($class,@argv)=@_;local@ARGV=@argv;GetOptions(\my%opt,qw/days=i before=s dry-run/)or pod2usage(2);$opt{dry_run}=delete$opt{'dry-run'};return (\%opt,\@ARGV)}sub run {my$self=shift;if (!$self->dry_run && $ENV{USER}ne 'root'){die "tmutil requires root privileges\n"}$self->cmd(qw/tmutil stopbackup/);$self->cmd(qw/tmutil disable/);my@targets=$self->backups2delete;unless (@targets){logf 'no deletion targets found';return 0}my$mount_point=$self->mount_point;logf "following backups to be deleted:\n  %s",join("\n  ",@targets);for my$bak (@targets){$self->cmd(qw/tmutil delete/,$bak)}my$dev_name=dev_name($targets[0]);$self->cmd(qw/hdiutil detach/,$dev_name);my$sparsebundle_path=sprintf '%s/%s.sparsebundle',$mount_point,$self->machine_name;$self->cmd(qw/hdiutil compact/,$sparsebundle_path);$self->cmd(qw/tmutil enable/)}sub backups2delete {my$self=shift;my@backups=`tmutil listbackups`;if ($?!=0){die "failed to execute `tmutil listbackups`: $?\n"}return grep {chomp;my@paths=split m!/!,$_;my$backup_date=eval {Time::Piece->strptime($paths[-1],'%Y-%m-%d-%H%M%S')};$backup_date && $self->before_tp > $backup_date}@backups}sub mount_point {my$self=shift;$self->{mount_point}||= sub {my@lines=`tmutil destinationinfo`;if ($?!=0){die "failed to execute `tmutil destinationinfo`: $?\n"}for my$line (@lines){chomp$line;my ($key,$val)=split /\s+:\s+/,$line,2;if ($key eq 'Mount Point'){return$val}}die "no mount points found\n"}->()}sub dev_name {my$path=shift;my@paths=split m!/!,$path;join '/',@paths[0..2]}sub machine_name {my$self=shift;$self->{machine_name}||= do {chomp(my$hostname=`hostname`);if ($?!=0){die "failed to execute `hostname`: $?\n"}$hostname =~ s/\.local$//;$hostname}}sub before_tp {my$self=shift;$self->{before_tp}||= sub {if ($self->before){my$time=str2time$self->before;die "unrecognized date format @{[$self->before]}" unless$time;return Time::Piece->localtime($time)}my$days=$self->days || 366;return Time::Piece->localtime()- Time::Seconds::ONE_DAY()* $days}->()}sub cmd {my ($self,@command)=@_;my$cmd_str=join(' ',@command);logf 'execute%s: `%s`',$self->dry_run ? '(dry-run)' : '',$cmd_str;if (!$self->dry_run){!system(@command)or die "failed to execute command: $cmd_str: $?\n"}}1;
+  package App::tmclean;use 5.010;use warnings;use version 0.77;our$VERSION=version->declare("v0.0.4");use Getopt::Long qw/GetOptions :config posix_default no_ignore_case bundling auto_help/;use Pod::Usage qw/pod2usage/;use Class::Accessor::Lite (new=>1,ro=>[qw/before days dry_run/],);use HTTP::Date qw/str2time/;use Time::Piece ();use Time::Seconds ();sub logf {my$msg=shift;$msg=sprintf($msg,@_);my$prefix='[tmclean]' .Time::Piece->localtime->strftime('[%Y-%m-%d %H:%M:%S] ');$msg .= "\n" if$msg !~ /\n$/;print STDERR$prefix .$msg}sub new_with_options {my ($class,@argv)=@_;my ($opt)=$class->parse_options(@argv);$class->new($opt)}sub parse_options {my ($class,@argv)=@_;local@ARGV=@argv;GetOptions(\my%opt,qw/days=i before=s dry-run/)or pod2usage(2);$opt{dry_run}=delete$opt{'dry-run'};return (\%opt,\@ARGV)}sub run {my$self=shift;if (!$self->dry_run && $ENV{USER}ne 'root'){die "tmutil requires root privileges\n"}$self->cmd(qw/tmutil stopbackup/);$self->cmd(qw/tmutil disable/);my@targets=$self->backups2delete;unless (@targets){logf 'no deletion targets found';return 0}my$mount_point=$self->mount_point;logf "following backups to be deleted:\n  %s",join("\n  ",@targets);for my$bak (@targets){$self->cmd(qw/tmutil delete/,$bak)}my$dev_name=dev_name($targets[0]);$self->cmd(qw/hdiutil detach/,$dev_name);my$backupbundle_path=sprintf '%s/%s.sparsebundle',$mount_point,$self->machine_name;if (!-d $backupbundle_path){$backupbundle_path =~ s/\.sparsebundle$/.backupbundle/}$self->cmd(qw/hdiutil compact/,$backupbundle_path);$self->cmd(qw/tmutil enable/)}sub backups2delete {my$self=shift;my@backups=`tmutil listbackups`;if ($?!=0){die "failed to execute `tmutil listbackups`: $?\n"}return grep {chomp;my@paths=split m!/!,$_;my$backup_date=eval {Time::Piece->strptime($paths[-1],'%Y-%m-%d-%H%M%S')};$backup_date && $self->before_tp > $backup_date}@backups}sub mount_point {my$self=shift;$self->{mount_point}||= sub {my@lines=`tmutil destinationinfo`;if ($?!=0){die "failed to execute `tmutil destinationinfo`: $?\n"}for my$line (@lines){chomp$line;my ($key,$val)=split /\s+:\s+/,$line,2;if ($key eq 'Mount Point'){return$val}}die "no mount points found\n"}->()}sub dev_name {my$path=shift;my@paths=split m!/!,$path;join '/',@paths[0..2]}sub machine_name {my$self=shift;$self->{machine_name}||= do {chomp(my$hostname=`hostname`);if ($?!=0){die "failed to execute `hostname`: $?\n"}$hostname =~ s/\.local$//;$hostname}}sub before_tp {my$self=shift;$self->{before_tp}||= sub {if ($self->before){my$time=str2time$self->before;die "unrecognized date format @{[$self->before]}" unless$time;return Time::Piece->localtime($time)}my$days=$self->days || 366;return Time::Piece->localtime()- Time::Seconds::ONE_DAY()* $days}->()}sub cmd {my ($self,@command)=@_;my$cmd_str=join(' ',@command);logf 'execute%s: `%s`',$self->dry_run ? '(dry-run)' : '',$cmd_str;if (!$self->dry_run){!system(@command)or die "failed to execute command: $cmd_str: $?\n"}}1;
 APP_TMCLEAN
 
 $fatpacked{"Class/Accessor/Lite.pm"} = '#line '.(1+__LINE__).' "'.__FILE__."\"\n".<<'CLASS_ACCESSOR_LITE';
   package Class::Accessor::Lite;use strict;our$VERSION='0.08';sub croak {require Carp;Carp::croak(@_)}sub import {shift;my%args=@_;my$pkg=caller(0);my%key_ctor=(rw=>\&_mk_accessors,ro=>\&_mk_ro_accessors,wo=>\&_mk_wo_accessors,);for my$key (sort keys%key_ctor){if (defined$args{$key}){croak("value of the '$key' parameter should be an arrayref")unless ref($args{$key})eq 'ARRAY';$key_ctor{$key}->($pkg,@{$args{$key}})}}_mk_new($pkg)if$args{new};1}sub mk_new_and_accessors {(undef,my@properties)=@_;my$pkg=caller(0);_mk_new($pkg);_mk_accessors($pkg,@properties)}sub mk_new {my$pkg=caller(0);_mk_new($pkg)}sub mk_accessors {(undef,my@properties)=@_;my$pkg=caller(0);_mk_accessors($pkg,@properties)}sub mk_ro_accessors {(undef,my@properties)=@_;my$pkg=caller(0);_mk_ro_accessors($pkg,@properties)}sub mk_wo_accessors {(undef,my@properties)=@_;my$pkg=caller(0);_mk_wo_accessors($pkg,@properties)}sub _mk_new {my$pkg=shift;no strict 'refs';*{$pkg .'::new'}=__m_new($pkg)}sub _mk_accessors {my$pkg=shift;no strict 'refs';for my$n (@_){*{$pkg .'::' .$n}=__m($n)}}sub _mk_ro_accessors {my$pkg=shift;no strict 'refs';for my$n (@_){*{$pkg .'::' .$n}=__m_ro($pkg,$n)}}sub _mk_wo_accessors {my$pkg=shift;no strict 'refs';for my$n (@_){*{$pkg .'::' .$n}=__m_wo($pkg,$n)}}sub __m_new {my$pkg=shift;no strict 'refs';return sub {my$klass=shift;bless {(@_==1 && ref($_[0])eq 'HASH' ? %{$_[0]}: @_),},$klass}}sub __m {my$n=shift;sub {return $_[0]->{$n}if @_==1;return $_[0]->{$n}=$_[1]if @_==2;shift->{$n}=\@_}}sub __m_ro {my ($pkg,$n)=@_;sub {if (@_==1){return $_[0]->{$n}if @_==1}else {my$caller=caller(0);croak("'$caller' cannot access the value of '$n' on objects of class '$pkg'")}}}sub __m_wo {my ($pkg,$n)=@_;sub {if (@_==1){my$caller=caller(0);croak("'$caller' cannot alter the value of '$n' on objects of class '$pkg'")}else {return $_[0]->{$n}=$_[1]if @_==2;shift->{$n}=\@_}}}1;
 CLASS_ACCESSOR_LITE
 
+$fatpacked{"Date/Format.pm"} = '#line '.(1+__LINE__).' "'.__FILE__."\"\n".<<'DATE_FORMAT';
+  package Date::Format;use strict;use vars qw(@EXPORT @ISA $VERSION);require Exporter;$VERSION="2.24";@ISA=qw(Exporter);@EXPORT=qw(time2str strftime ctime asctime);sub time2str ($;$$) {Date::Format::Generic->time2str(@_)}sub strftime ($\@;$) {Date::Format::Generic->strftime(@_)}sub ctime ($;$) {my($t,$tz)=@_;Date::Format::Generic->time2str("%a %b %e %T %Y\n",$t,$tz)}sub asctime (\@;$) {my($t,$tz)=@_;Date::Format::Generic->strftime("%a %b %e %T %Y\n",$t,$tz)}package Date::Format::Generic;use vars qw($epoch $tzname);use Time::Zone;use Time::Local;sub ctime {my($me,$t,$tz)=@_;$me->time2str("%a %b %e %T %Y\n",$t,$tz)}sub asctime {my($me,$t,$tz)=@_;$me->strftime("%a %b %e %T %Y\n",$t,$tz)}sub _subs {my$fn;$_[1]=~ s/
+  		%(O?[%a-zA-Z])
+  	   /
+                  ($_[0]->can("format_$1") || sub { $1 })->($_[0]);
+  	   /sgeox;$_[1]}sub strftime {my($pkg,$fmt,$time);($pkg,$fmt,$time,$tzname)=@_;my$me=ref($pkg)? $pkg : bless [];if(defined$tzname){$tzname=uc$tzname;$tzname=sprintf("%+05d",$tzname)unless($tzname =~ /\D/);$epoch=timegm(@{$time}[0..5]);@$me=gmtime($epoch + tz_offset($tzname)- tz_offset())}else {@$me=@$time;undef$epoch}_subs($me,$fmt)}sub time2str {my($pkg,$fmt,$time);($pkg,$fmt,$time,$tzname)=@_;my$me=ref($pkg)? $pkg : bless [],$pkg;$epoch=$time;if(defined$tzname){$tzname=uc$tzname;$tzname=sprintf("%+05d",$tzname)unless($tzname =~ /\D/);$time += tz_offset($tzname);@$me=gmtime($time)}else {@$me=localtime($time)}$me->[9]=$time;_subs($me,$fmt)}my(@DoW,@MoY,@DoWs,@MoYs,@AMPM,%format,@Dsuf);@DoW=qw(Sunday Monday Tuesday Wednesday Thursday Friday Saturday);@MoY=qw(January February March April May June July August September October November December);@DoWs=map {substr($_,0,3)}@DoW;@MoYs=map {substr($_,0,3)}@MoY;@AMPM=qw(AM PM);@Dsuf=(qw(th st nd rd th th th th th th))x 3;@Dsuf[11,12,13]=qw(th th th);@Dsuf[30,31]=qw(th st);%format=('x'=>"%m/%d/%y",'C'=>"%a %b %e %T %Z %Y",'X'=>"%H:%M:%S",);my@locale;my$locale="/usr/share/lib/locale/LC_TIME/default";local*LOCALE;if(open(LOCALE,"$locale")){chop(@locale=<LOCALE>);close(LOCALE);@MoYs=@locale[0 .. 11];@MoY=@locale[12 .. 23];@DoWs=@locale[24 .. 30];@DoW=@locale[31 .. 37];@format{"X","x","C"}=@locale[38 .. 40];@AMPM=@locale[41 .. 42]}sub wkyr {my($wstart,$wday,$yday)=@_;$wday=($wday + 7 - $wstart)% 7;return int(($yday - $wday + 13)/ 7 - 1)}my@roman=('',qw(I II III IV V VI VII VIII IX));sub roman {my$n=shift;$n =~ s/(\d)$//;my$r=$roman[$1 ];if($n =~ s/(\d)$//){(my$t=$roman[$1])=~ tr/IVX/XLC/;$r=$t .$r}if($n =~ s/(\d)$//){(my$t=$roman[$1])=~ tr/IVX/CDM/;$r=$t .$r}if($n =~ s/(\d)$//){(my$t=$roman[$1])=~ tr/IVX/M../;$r=$t .$r}$r}sub format_a {$DoWs[$_[0]->[6]]}sub format_A {$DoW[$_[0]->[6]]}sub format_b {$MoYs[$_[0]->[4]]}sub format_B {$MoY[$_[0]->[4]]}sub format_h {$MoYs[$_[0]->[4]]}sub format_p {$_[0]->[2]>= 12 ? $AMPM[1]: $AMPM[0]}sub format_P {lc($_[0]->[2]>= 12 ? $AMPM[1]: $AMPM[0])}sub format_d {sprintf("%02d",$_[0]->[3])}sub format_e {sprintf("%2d",$_[0]->[3])}sub format_H {sprintf("%02d",$_[0]->[2])}sub format_I {sprintf("%02d",$_[0]->[2]% 12 || 12)}sub format_j {sprintf("%03d",$_[0]->[7]+ 1)}sub format_k {sprintf("%2d",$_[0]->[2])}sub format_l {sprintf("%2d",$_[0]->[2]% 12 || 12)}sub format_L {$_[0]->[4]+ 1}sub format_m {sprintf("%02d",$_[0]->[4]+ 1)}sub format_M {sprintf("%02d",$_[0]->[1])}sub format_q {sprintf("%01d",int($_[0]->[4]/ 3)+ 1)}sub format_s {$epoch=timelocal(@{$_[0]}[0..5])unless defined$epoch;sprintf("%d",$epoch)}sub format_S {sprintf("%02d",$_[0]->[0])}sub format_U {wkyr(0,$_[0]->[6],$_[0]->[7])}sub format_w {$_[0]->[6]}sub format_W {wkyr(1,$_[0]->[6],$_[0]->[7])}sub format_y {sprintf("%02d",$_[0]->[5]% 100)}sub format_Y {sprintf("%04d",$_[0]->[5]+ 1900)}sub format_Z {my$o=tz_local_offset(timelocal(@{$_[0]}[0..5]));defined$tzname ? $tzname : uc tz_name($o,$_[0]->[8])}sub format_z {my$t=timelocal(@{$_[0]}[0..5]);my$o=defined$tzname ? tz_offset($tzname,$t): tz_offset(undef,$t);sprintf("%+03d%02d",int($o / 3600),int(abs($o)% 3600)/ 60)}sub format_c {&format_x ." " .&format_X}sub format_D {&format_m ."/" .&format_d ."/" .&format_y}sub format_r {&format_I .":" .&format_M .":" .&format_S ." " .&format_p}sub format_R {&format_H .":" .&format_M}sub format_T {&format_H .":" .&format_M .":" .&format_S}sub format_t {"\t"}sub format_n {"\n"}sub format_o {sprintf("%2d%s",$_[0]->[3],$Dsuf[$_[0]->[3]])}sub format_x {my$f=$format{'x'};_subs($_[0],$f)}sub format_X {my$f=$format{'X'};_subs($_[0],$f)}sub format_C {my$f=$format{'C'};_subs($_[0],$f)}sub format_Od {roman(format_d(@_))}sub format_Oe {roman(format_e(@_))}sub format_OH {roman(format_H(@_))}sub format_OI {roman(format_I(@_))}sub format_Oj {roman(format_j(@_))}sub format_Ok {roman(format_k(@_))}sub format_Ol {roman(format_l(@_))}sub format_Om {roman(format_m(@_))}sub format_OM {roman(format_M(@_))}sub format_Oq {roman(format_q(@_))}sub format_Oy {roman(format_y(@_))}sub format_OY {roman(format_Y(@_))}sub format_G {int(($_[0]->[9]- 315993600)/ 604800)}1;
+DATE_FORMAT
+
+$fatpacked{"Date/Language.pm"} = '#line '.(1+__LINE__).' "'.__FILE__."\"\n".<<'DATE_LANGUAGE';
+  package Date::Language;use strict;use Time::Local;use Carp;use vars qw($VERSION @ISA);require Date::Format;$VERSION="1.10";@ISA=qw(Date::Format::Generic);sub new {my$self=shift;my$type=shift || $self;$type =~ s/^(\w+)$/Date::Language::$1/;croak "Bad language" unless$type =~ /^[\w:]+$/;eval "require $type" or croak $@;bless [],$type}sub DESTROY {}sub AUTOLOAD {use vars qw($AUTOLOAD);if($AUTOLOAD =~ /::strptime\Z/o){my$self=$_[0];my$type=ref($self)|| $self;require Date::Parse;no strict 'refs';*{"${type}::strptime"}=Date::Parse::gen_parser(\%{"${type}::DoW"},\%{"${type}::MoY"},\@{"${type}::Dsuf"},1);goto &{"${type}::strptime"}}croak "Undefined method &$AUTOLOAD called"}sub str2time {my$me=shift;my@t=$me->strptime(@_);return undef unless@t;my($ss,$mm,$hh,$day,$month,$year,$zone)=@t;my@lt=localtime(time);$hh ||= 0;$mm ||= 0;$ss ||= 0;$month=$lt[4]unless(defined$month);$day=$lt[3]unless(defined$day);$year=($month > $lt[4])? ($lt[5]- 1): $lt[5]unless(defined$year);return defined$zone ? timegm($ss,$mm,$hh,$day,$month,$year)- $zone : timelocal($ss,$mm,$hh,$day,$month,$year)}1;
+DATE_LANGUAGE
+
+$fatpacked{"Date/Language/Afar.pm"} = '#line '.(1+__LINE__).' "'.__FILE__."\"\n".<<'DATE_LANGUAGE_AFAR';
+  package Date::Language::Afar;use Date::Language ();use vars qw(@ISA @DoW @DoWs @MoY @MoYs @AMPM @Dsuf %MoY %DoW $VERSION);@ISA=qw(Date::Language);$VERSION="0.99";@DoW=qw(Acaada Etleeni Talaata Arbaqa Kamiisi Gumqata Sabti);@MoY=("Qunxa Garablu","Kudo","Ciggilta Kudo","Agda Baxis","Caxah Alsa","Qasa Dirri","Qado Dirri","Liiqen","Waysu","Diteli","Ximoli","Kaxxa Garablu");@DoWs=map {substr($_,0,3)}@DoW;@MoYs=map {substr($_,0,3)}@MoY;@AMPM=qw(saaku carra);@Dsuf=(qw(th st nd rd th th th th th th))x 3;@Dsuf[11,12,13]=qw(th th th);@Dsuf[30,31]=qw(th st);@MoY{@MoY}=(0 .. scalar(@MoY));@MoY{@MoYs}=(0 .. scalar(@MoYs));@DoW{@DoW}=(0 .. scalar(@DoW));@DoW{@DoWs}=(0 .. scalar(@DoWs));sub format_a {$DoWs[$_[0]->[6]]}sub format_A {$DoW[$_[0]->[6]]}sub format_b {$MoYs[$_[0]->[4]]}sub format_B {$MoY[$_[0]->[4]]}sub format_h {$MoYs[$_[0]->[4]]}sub format_p {$_[0]->[2]>= 12 ? $AMPM[1]: $AMPM[0]}1;
+DATE_LANGUAGE_AFAR
+
+$fatpacked{"Date/Language/Amharic.pm"} = '#line '.(1+__LINE__).' "'.__FILE__."\"\n".<<'DATE_LANGUAGE_AMHARIC';
+  package Date::Language::Amharic;use Date::Language ();use vars qw(@ISA @DoW @DoWs @MoY @MoYs @AMPM @Dsuf %MoY %DoW $VERSION);@ISA=qw(Date::Language);$VERSION="1.00";if ($] >= 5.006){@DoW=("\x{12a5}\x{1211}\x{12f5}","\x{1230}\x{129e}","\x{121b}\x{12ad}\x{1230}\x{129e}","\x{1228}\x{1261}\x{12d5}","\x{1210}\x{1219}\x{1235}","\x{12d3}\x{122d}\x{1265}","\x{1245}\x{12f3}\x{121c}");@MoY=("\x{1303}\x{1295}\x{12e9}\x{12c8}\x{122a}","\x{134c}\x{1265}\x{1229}\x{12c8}\x{122a}","\x{121b}\x{122d}\x{127d}","\x{12a4}\x{1355}\x{1228}\x{120d}","\x{121c}\x{12ed}","\x{1301}\x{1295}","\x{1301}\x{120b}\x{12ed}","\x{12a6}\x{1308}\x{1235}\x{1275}","\x{1234}\x{1355}\x{1274}\x{121d}\x{1260}\x{122d}","\x{12a6}\x{12ad}\x{1270}\x{12cd}\x{1260}\x{122d}","\x{1296}\x{126c}\x{121d}\x{1260}\x{122d}","\x{12f2}\x{1234}\x{121d}\x{1260}\x{122d}");@DoWs=map {substr($_,0,3)}@DoW;@MoYs=map {substr($_,0,3)}@MoY;@AMPM=("\x{1320}\x{12cb}\x{1275}","\x{12a8}\x{1230}\x{12d3}\x{1275}");@Dsuf=("\x{129b}" x 31)}else {@DoW=("áŠ¥áˆ‘á‹µ","áˆ°áŠž","áˆ›áŠ­áˆ°áŠž","áˆ¨á‰¡á‹•","áˆáˆ™áˆµ","á‹“áˆ­á‰¥","á‰…á‹³áˆœ");@MoY=("áŒƒáŠ•á‹©á‹ˆáˆª","áŒá‰¥áˆ©á‹ˆáˆª","áˆ›áˆ­á‰½","áŠ¤á•áˆ¨áˆ","áˆœá‹­","áŒáŠ•","áŒáˆ‹á‹­","áŠ¦áŒˆáˆµá‰µ","áˆ´á•á‰´áˆá‰ áˆ­","áŠ¦áŠ­á‰°á‹á‰ áˆ­","áŠ–á‰¬áˆá‰ áˆ­","á‹²áˆ´áˆá‰ áˆ­");@DoWs=map {substr($_,0,9)}@DoW;@MoYs=map {substr($_,0,9)}@MoY;@AMPM=("áŒ á‹‹á‰µ","áŠ¨áˆ°á‹“á‰µ");@Dsuf=("áŠ›" x 31)}@MoY{@MoY}=(0 .. scalar(@MoY));@MoY{@MoYs}=(0 .. scalar(@MoYs));@DoW{@DoW}=(0 .. scalar(@DoW));@DoW{@DoWs}=(0 .. scalar(@DoWs));sub format_a {$DoWs[$_[0]->[6]]}sub format_A {$DoW[$_[0]->[6]]}sub format_b {$MoYs[$_[0]->[4]]}sub format_B {$MoY[$_[0]->[4]]}sub format_h {$MoYs[$_[0]->[4]]}sub format_p {$_[0]->[2]>= 12 ? $AMPM[1]: $AMPM[0]}1;
+DATE_LANGUAGE_AMHARIC
+
+$fatpacked{"Date/Language/Austrian.pm"} = '#line '.(1+__LINE__).' "'.__FILE__."\"\n".<<'DATE_LANGUAGE_AUSTRIAN';
+  package Date::Language::Austrian;use Date::Language ();use vars qw(@ISA @DoW @DoWs @MoY @MoYs @AMPM @Dsuf %MoY %DoW $VERSION);@ISA=qw(Date::Language);$VERSION="1.01";@MoY=qw(Jänner Feber März April Mai Juni Juli August September Oktober November Dezember);@MoYs=qw(Jän Feb Mär Apr Mai Jun Jul Aug Sep Oct Nov Dez);@DoW=qw(Sonntag Montag Dienstag Mittwoch Donnerstag Freitag Samstag);@DoWs=qw(Son Mon Die Mit Don Fre Sam);use Date::Language::English ();@AMPM=@{Date::Language::English::AMPM};@Dsuf=@{Date::Language::English::Dsuf};@MoY{@MoY}=(0 .. scalar(@MoY));@MoY{@MoYs}=(0 .. scalar(@MoYs));@DoW{@DoW}=(0 .. scalar(@DoW));@DoW{@DoWs}=(0 .. scalar(@DoWs));sub format_a {$DoWs[$_[0]->[6]]}sub format_A {$DoW[$_[0]->[6]]}sub format_b {$MoYs[$_[0]->[4]]}sub format_B {$MoY[$_[0]->[4]]}sub format_h {$MoYs[$_[0]->[4]]}sub format_p {$_[0]->[2]>= 12 ? $AMPM[1]: $AMPM[0]}1;
+DATE_LANGUAGE_AUSTRIAN
+
+$fatpacked{"Date/Language/Brazilian.pm"} = '#line '.(1+__LINE__).' "'.__FILE__."\"\n".<<'DATE_LANGUAGE_BRAZILIAN';
+  package Date::Language::Brazilian;use Date::Language ();use vars qw(@ISA @DoW @DoWs @MoY @MoYs @AMPM @Dsuf %MoY %DoW $VERSION);@ISA=qw(Date::Language);$VERSION="1.01";@DoW=qw(Domingo Segunda Terça Quarta Quinta Sexta Sábado);@MoY=qw(Janeiro Fevereiro Março Abril Maio Junho Julho Agosto Setembro Outubro Novembro Dezembro);@DoWs=map {substr($_,0,3)}@DoW;@MoYs=map {substr($_,0,3)}@MoY;@AMPM=qw(AM PM);@Dsuf=(qw(mo ro do ro to to to mo vo no))x 3;@MoY{@MoY}=(0 .. scalar(@MoY));@MoY{@MoYs}=(0 .. scalar(@MoYs));@DoW{@DoW}=(0 .. scalar(@DoW));@DoW{@DoWs}=(0 .. scalar(@DoWs));sub format_a {$DoWs[$_[0]->[6]]}sub format_A {$DoW[$_[0]->[6]]}sub format_b {$MoYs[$_[0]->[4]]}sub format_B {$MoY[$_[0]->[4]]}sub format_h {$MoYs[$_[0]->[4]]}sub format_p {$_[0]->[2]>= 12 ? $AMPM[1]: $AMPM[0]}1;
+DATE_LANGUAGE_BRAZILIAN
+
+$fatpacked{"Date/Language/Bulgarian.pm"} = '#line '.(1+__LINE__).' "'.__FILE__."\"\n".<<'DATE_LANGUAGE_BULGARIAN';
+  package Date::Language::Bulgarian;use strict;use warnings;use utf8;use base qw(Date::Language);our (@DoW,@DoWs,@MoY,@MoYs,@AMPM,@Dsuf,%MoY,%DoW,$VERSION);$VERSION="1.01";@DoW=qw(Ð½ÐµÐ´ÐµÐ»Ñ Ð¿Ð¾Ð½ÐµÐ´ÐµÐ»Ð½Ð¸Ðº Ð²Ñ‚Ð¾Ñ€Ð½Ð¸Ðº ÑÑ€ÑÐ´Ð° Ñ‡ÐµÑ‚Ð²ÑŠÑ€Ñ‚ÑŠÐº Ð¿ÐµÑ‚ÑŠÐº ÑÑŠÐ±Ð¾Ñ‚Ð°);@MoY=qw(ÑÐ½ÑƒÐ°Ñ€Ð¸ Ñ„ÐµÐ²Ñ€ÑƒÐ°Ñ€Ð¸ Ð¼Ð°Ñ€Ñ‚ Ð°Ð¿Ñ€Ð¸Ð» Ð¼Ð°Ð¹ ÑŽÐ½Ð¸ ÑŽÐ»Ð¸ Ð°Ð²Ð³ÑƒÑÑ‚ ÑÐµÐ¿Ñ‚ÐµÐ¼Ð²Ñ€Ð¸ Ð¾ÐºÑ‚Ð¾Ð¼Ð²Ñ€Ð¸ Ð½Ð¾ÐµÐ¼Ð²Ñ€Ð¸ Ð´ÐµÐºÐµÐ¼Ð²Ñ€Ð¸);@DoWs=qw(Ð½Ð´ Ð¿Ð½ Ð²Ñ‚ ÑÑ€ Ñ‡Ñ‚ Ð¿Ñ‚ ÑÐ±);@MoYs=map {substr($_,0,3)}@MoY;@AMPM=qw(AM PM);@Dsuf=(qw(Ñ‚Ð¸ Ð²Ð¸ Ñ€Ð¸ Ñ‚Ð¸ Ñ‚Ð¸ Ñ‚Ð¸ Ñ‚Ð¸ Ð¼Ð¸ Ð¼Ð¸ Ñ‚Ð¸))x 3;@Dsuf[11,12,13]=qw(Ñ‚Ð¸ Ñ‚Ð¸ Ñ‚Ð¸);@Dsuf[30,31]=qw(Ñ‚Ð¸ Ð²Ð¸);@MoY{@MoY}=(0 .. scalar(@MoY));@MoY{@MoYs}=(0 .. scalar(@MoYs));@DoW{@DoW}=(0 .. scalar(@DoW));@DoW{@DoWs}=(0 .. scalar(@DoWs));sub format_a {$DoWs[$_[0]->[6]]}sub format_A {$DoW[$_[0]->[6]]}sub format_b {$MoYs[$_[0]->[4]]}sub format_B {$MoY[$_[0]->[4]]}sub format_h {$MoYs[$_[0]->[4]]}sub format_p {$_[0]->[2]>= 12 ? $AMPM[1]: $AMPM[0]}sub format_o {($_[0]->[3]<10?' ':'').$_[0]->[3].$Dsuf[$_[0]->[3]]}1;
+DATE_LANGUAGE_BULGARIAN
+
+$fatpacked{"Date/Language/Chinese.pm"} = '#line '.(1+__LINE__).' "'.__FILE__."\"\n".<<'DATE_LANGUAGE_CHINESE';
+  package Date::Language::Chinese;use Date::Language ();use vars qw(@ISA @DoW @DoWs @MoY @MoYs @AMPM @Dsuf %MoY %DoW $VERSION);@ISA=qw(Date::Language);$VERSION="1.00";@DoW=qw(æ˜ŸæœŸæ—¥ æ˜ŸæœŸä¸€ æ˜ŸæœŸäºŒ æ˜ŸæœŸä¸‰ æ˜ŸæœŸå›› æ˜ŸæœŸäº” æ˜ŸæœŸå ­);@MoY=qw(ä¸€æœˆ äºŒæœˆ ä¸‰æœˆ å››æœˆ äº”æœˆ å ­æœˆ ä¸ƒæœˆ å «æœˆ ä¹æœˆ åæœˆ åä¸€æœˆ åäºŒæœˆ);@DoWs=map {$_}@DoW;@MoYs=map {$_}@MoY;@AMPM=qw(ä¸Šåˆ ä¸‹åˆ);@Dsuf=(qw(æ—¥ æ—¥ æ—¥ æ—¥ æ—¥ æ—¥ æ—¥ æ—¥ æ—¥ æ—¥))x 3;@MoY{@MoY}=(0 .. scalar(@MoY));@MoY{@MoYs}=(0 .. scalar(@MoYs));@DoW{@DoW}=(0 .. scalar(@DoW));@DoW{@DoWs}=(0 .. scalar(@DoWs));sub format_a {$DoWs[$_[0]->[6]]}sub format_A {$DoW[$_[0]->[6]]}sub format_b {$MoYs[$_[0]->[4]]}sub format_B {$MoY[$_[0]->[4]]}sub format_h {$MoYs[$_[0]->[4]]}sub format_p {$_[0]->[2]>= 12 ? $AMPM[1]: $AMPM[0]}sub format_o {sprintf("%2d%s",$_[0]->[3],"æ—¥")}1;
+DATE_LANGUAGE_CHINESE
+
+$fatpacked{"Date/Language/Chinese_GB.pm"} = '#line '.(1+__LINE__).' "'.__FILE__."\"\n".<<'DATE_LANGUAGE_CHINESE_GB';
+  package Date::Language::Chinese_GB;use Date::Language ();use vars qw(@ISA @DoW @DoWs @MoY @MoYs @AMPM @Dsuf %MoY %DoW $VERSION);@ISA=qw(Date::Language);$VERSION="1.01";@DoW=qw(ÐÇÆÚÈÕ ÐÇÆÚÒ» ÐÇÆÚ¶þ ÐÇÆÚÈý ÐÇÆÚËÄ ÐÇÆÚÎå ÐÇÆÚÁù);@MoY=qw(Ò»ÔÂ ¶þÔÂ ÈýÔÂ ËÄÔÂ ÎåÔÂ ÁùÔÂ ÆßÔÂ °ËÔÂ ¾ÅÔÂ Ê®ÔÂ Ê®Ò»ÔÂ Ê®¶þÔÂ);@DoWs=map {$_}@DoW;@MoYs=map {$_}@MoY;@AMPM=qw(ÉÏÎç ÏÂÎç);@Dsuf=(qw(ÈÕ ÈÕ ÈÕ ÈÕ ÈÕ ÈÕ ÈÕ ÈÕ ÈÕ ÈÕ))x 3;@MoY{@MoY}=(0 .. scalar(@MoY));@MoY{@MoYs}=(0 .. scalar(@MoYs));@DoW{@DoW}=(0 .. scalar(@DoW));@DoW{@DoWs}=(0 .. scalar(@DoWs));sub format_a {$DoWs[$_[0]->[6]]}sub format_A {$DoW[$_[0]->[6]]}sub format_b {$MoYs[$_[0]->[4]]}sub format_B {$MoY[$_[0]->[4]]}sub format_h {$MoYs[$_[0]->[4]]}sub format_p {$_[0]->[2]>= 12 ? $AMPM[1]: $AMPM[0]}sub format_o {sprintf("%2d%s",$_[0]->[3],"ÈÕ")}1;
+DATE_LANGUAGE_CHINESE_GB
+
+$fatpacked{"Date/Language/Czech.pm"} = '#line '.(1+__LINE__).' "'.__FILE__."\"\n".<<'DATE_LANGUAGE_CZECH';
+  package Date::Language::Czech;use vars qw(@ISA @DoW @DoWs @MoY @MoYs @MoY2 @AMPM %MoY %DoW $VERSION);@ISA=qw(Date::Language Date::Format::Generic);$VERSION="1.01";@MoY=qw(leden únor bøezen duben kvìten èerven èervenec srpen záøí øíjen listopad prosinec);@MoYs=qw(led únor bøe dub kvì èvn èec srp záøí øíj lis pro);@MoY2=@MoY;for (@MoY2){s!en$!na! or s!ec$!ce! or s!ad$!adu! or s!or$!ora!}@DoW=qw(nedìle pondìlí úterý støeda ètvrtek pátek sobota);@DoWs=qw(Ne Po Út St Èt Pá So);@AMPM=qw(dop. odp.);@MoY{@MoY}=(0 .. scalar(@MoY));@MoY{@MoYs}=(0 .. scalar(@MoYs));@DoW{@DoW}=(0 .. scalar(@DoW));@DoW{@DoWs}=(0 .. scalar(@DoWs));sub format_a {$DoWs[$_[0]->[6]]}sub format_A {$DoW[$_[0]->[6]]}sub format_b {$MoYs[$_[0]->[4]]}sub format_B {$MoY[$_[0]->[4]]}sub format_h {$MoYs[$_[0]->[4]]}sub format_p {$_[0]->[2]>= 12 ? $AMPM[1]: $AMPM[0]}sub format_d {$_[0]->[3]}sub format_m {$_[0]->[4]+ 1}sub format_o {$_[0]->[3].'.'}sub format_Q {$MoY2[$_[0]->[4]]}sub time2str {my$ref=shift;my@a=@_;$a[0]=~ s/(%[do]\.?\s?)%B/$1%Q/;$ref->SUPER::time2str(@a)}sub strftime {my$ref=shift;my@a=@_;$a[0]=~ s/(%[do]\.?\s?)%B/$1%Q/;$ref->SUPER::time2str(@a)}1;
+DATE_LANGUAGE_CZECH
+
+$fatpacked{"Date/Language/Danish.pm"} = '#line '.(1+__LINE__).' "'.__FILE__."\"\n".<<'DATE_LANGUAGE_DANISH';
+  package Date::Language::Danish;use Date::Language ();use vars qw(@ISA @DoW @DoWs @MoY @MoYs @AMPM @Dsuf %MoY %DoW $VERSION);@ISA=qw(Date::Language);$VERSION="1.01";@MoY=qw(Januar Februar Marts April Maj Juni Juli August September Oktober November December);@MoYs=qw(Jan Feb Mar Apr Maj Jun Jul Aug Sep Okt Nov Dec);@DoW=qw(Søndag Mandag Tirsdag Onsdag Torsdag Fredag Lørdag Søndag);@DoWs=qw(Søn Man Tir Ons Tor Fre Lør Søn);use Date::Language::English ();@AMPM=@{Date::Language::English::AMPM};@Dsuf=@{Date::Language::English::Dsuf};@MoY{@MoY}=(0 .. scalar(@MoY));@MoY{@MoYs}=(0 .. scalar(@MoYs));@DoW{@DoW}=(0 .. scalar(@DoW));@DoW{@DoWs}=(0 .. scalar(@DoWs));sub format_a {$DoWs[$_[0]->[6]]}sub format_A {$DoW[$_[0]->[6]]}sub format_b {$MoYs[$_[0]->[4]]}sub format_B {$MoY[$_[0]->[4]]}sub format_h {$MoYs[$_[0]->[4]]}sub format_p {$_[0]->[2]>= 12 ? $AMPM[1]: $AMPM[0]}1;
+DATE_LANGUAGE_DANISH
+
+$fatpacked{"Date/Language/Dutch.pm"} = '#line '.(1+__LINE__).' "'.__FILE__."\"\n".<<'DATE_LANGUAGE_DUTCH';
+  package Date::Language::Dutch;use Date::Language ();use vars qw(@ISA @DoW @DoWs @MoY @MoYs @AMPM @Dsuf %MoY %DoW $VERSION);@ISA=qw(Date::Language);$VERSION="1.02";@MoY=qw(januari februari maart april mei juni juli augustus september oktober november december);@MoYs=map(substr($_,0,3),@MoY);$MoYs[2]='mrt';@DoW=map($_ ."dag",qw(zon maan dins woens donder vrij zater));@DoWs=map(substr($_,0,2),@DoW);@AMPM=qw(VM NM);@Dsuf=('e')x 31;@MoY{@MoY}=(0 .. scalar(@MoY));@MoY{@MoYs}=(0 .. scalar(@MoYs));@DoW{@DoW}=(0 .. scalar(@DoW));@DoW{@DoWs}=(0 .. scalar(@DoWs));sub format_a {$DoWs[$_[0]->[6]]}sub format_A {$DoW[$_[0]->[6]]}sub format_b {$MoYs[$_[0]->[4]]}sub format_B {$MoY[$_[0]->[4]]}sub format_h {$MoYs[$_[0]->[4]]}sub format_p {$_[0]->[2]>= 12 ? $AMPM[1]: $AMPM[0]}sub format_o {sprintf("%2de",$_[0]->[3])}1;
+DATE_LANGUAGE_DUTCH
+
+$fatpacked{"Date/Language/English.pm"} = '#line '.(1+__LINE__).' "'.__FILE__."\"\n".<<'DATE_LANGUAGE_ENGLISH';
+  package Date::Language::English;use Date::Language ();use vars qw(@ISA @DoW @DoWs @MoY @MoYs @AMPM @Dsuf %MoY %DoW $VERSION);@ISA=qw(Date::Language);$VERSION="1.01";@DoW=qw(Sunday Monday Tuesday Wednesday Thursday Friday Saturday);@MoY=qw(January February March April May June July August September October November December);@DoWs=map {substr($_,0,3)}@DoW;@MoYs=map {substr($_,0,3)}@MoY;@AMPM=qw(AM PM);@Dsuf=(qw(th st nd rd th th th th th th))x 3;@Dsuf[11,12,13]=qw(th th th);@Dsuf[30,31]=qw(th st);@MoY{@MoY}=(0 .. scalar(@MoY));@MoY{@MoYs}=(0 .. scalar(@MoYs));@DoW{@DoW}=(0 .. scalar(@DoW));@DoW{@DoWs}=(0 .. scalar(@DoWs));sub format_a {$DoWs[$_[0]->[6]]}sub format_A {$DoW[$_[0]->[6]]}sub format_b {$MoYs[$_[0]->[4]]}sub format_B {$MoY[$_[0]->[4]]}sub format_h {$MoYs[$_[0]->[4]]}sub format_p {$_[0]->[2]>= 12 ? $AMPM[1]: $AMPM[0]}1;
+DATE_LANGUAGE_ENGLISH
+
+$fatpacked{"Date/Language/Finnish.pm"} = '#line '.(1+__LINE__).' "'.__FILE__."\"\n".<<'DATE_LANGUAGE_FINNISH';
+  package Date::Language::Finnish;use Date::Language ();use vars qw(@ISA @DoW @DoWs @MoY @MoYs @AMPM @Dsuf %MoY %DoW $VERSION);@ISA=qw(Date::Language);$VERSION="1.01";@MoY=map($_ ."kuu",qw(tammi helmi maalis huhti touko kesä heinä elo syys loka marras joulu));@DoW=qw(sunnuntai maanantai tiistai keskiviikko torstai perjantai lauantai);@MoYs=@MoY;@DoWs=@DoW;@Dsuf=('.')x 31;@AMPM=qw(ap ip);@MoY{@MoY}=(0 .. scalar(@MoY));@MoY{@MoYs}=(0 .. scalar(@MoYs));@DoW{@DoW}=(0 .. scalar(@DoW));@DoW{@DoWs}=(0 .. scalar(@DoWs));sub format_a {$DoWs[$_[0]->[6]]}sub format_A {$DoW[$_[0]->[6]]}sub format_b {$MoYs[$_[0]->[4]]}sub format_B {$MoY[$_[0]->[4]]}sub format_h {$MoYs[$_[0]->[4]]}sub format_p {$_[0]->[2]>= 12 ? $AMPM[1]: $AMPM[0]}sub format_o {sprintf("%2de",$_[0]->[3])}1;
+DATE_LANGUAGE_FINNISH
+
+$fatpacked{"Date/Language/French.pm"} = '#line '.(1+__LINE__).' "'.__FILE__."\"\n".<<'DATE_LANGUAGE_FRENCH';
+  package Date::Language::French;use Date::Language ();use vars qw(@ISA @DoW @DoWs @MoY @MoYs @AMPM @Dsuf %MoY %DoW $VERSION);@ISA=qw(Date::Language);$VERSION="1.04";@DoW=qw(dimanche lundi mardi mercredi jeudi vendredi samedi);@MoY=qw(janvier février mars avril mai juin juillet août septembre octobre novembre décembre);@DoWs=map {substr($_,0,3)}@DoW;@MoYs=map {substr($_,0,3)}@MoY;$MoYs[6]='jul';@AMPM=qw(AM PM);@Dsuf=((qw(er e e e e e e e e e))x 3,'er');@MoY{@MoY}=(0 .. scalar(@MoY));@MoY{@MoYs}=(0 .. scalar(@MoYs));@DoW{@DoW}=(0 .. scalar(@DoW));@DoW{@DoWs}=(0 .. scalar(@DoWs));sub format_a {$DoWs[$_[0]->[6]]}sub format_A {$DoW[$_[0]->[6]]}sub format_b {$MoYs[$_[0]->[4]]}sub format_B {$MoY[$_[0]->[4]]}sub format_h {$MoYs[$_[0]->[4]]}sub format_p {$_[0]->[2]>= 12 ? $AMPM[1]: $AMPM[0]}sub format_o {$_[0]->[3]}1;
+DATE_LANGUAGE_FRENCH
+
+$fatpacked{"Date/Language/Gedeo.pm"} = '#line '.(1+__LINE__).' "'.__FILE__."\"\n".<<'DATE_LANGUAGE_GEDEO';
+  package Date::Language::Gedeo;use Date::Language ();use vars qw(@ISA @DoW @DoWs @MoY @MoYs @AMPM @Dsuf %MoY %DoW $VERSION);@ISA=qw(Date::Language);$VERSION="0.99";@DoW=qw(Sanbbattaa Sanno Masano Roobe Hamusse Arbe Qiddamme);@MoY=("Oritto","Birre'a","Onkkollessa","Saddasa","Arrasa","Qammo","Ella","Waacibajje","Canissa","Addolessa","Bittitotessa","Hegeya");@DoWs=map {substr($_,0,3)}@DoW;$DoWs[0]="Snb";$DoWs[1]="Sno";@MoYs=map {substr($_,0,3)}@MoY;@AMPM=qw(gorsa warreti-udumma);@Dsuf=(qw(th st nd rd th th th th th th))x 3;@Dsuf[11,12,13]=qw(th th th);@Dsuf[30,31]=qw(th st);@MoY{@MoY}=(0 .. scalar(@MoY));@MoY{@MoYs}=(0 .. scalar(@MoYs));@DoW{@DoW}=(0 .. scalar(@DoW));@DoW{@DoWs}=(0 .. scalar(@DoWs));sub format_a {$DoWs[$_[0]->[6]]}sub format_A {$DoW[$_[0]->[6]]}sub format_b {$MoYs[$_[0]->[4]]}sub format_B {$MoY[$_[0]->[4]]}sub format_h {$MoYs[$_[0]->[4]]}sub format_p {$_[0]->[2]>= 12 ? $AMPM[1]: $AMPM[0]}1;
+DATE_LANGUAGE_GEDEO
+
+$fatpacked{"Date/Language/German.pm"} = '#line '.(1+__LINE__).' "'.__FILE__."\"\n".<<'DATE_LANGUAGE_GERMAN';
+  package Date::Language::German;use Date::Language ();use vars qw(@ISA @DoW @DoWs @MoY @MoYs @AMPM @Dsuf %MoY %DoW $VERSION);@ISA=qw(Date::Language);$VERSION="1.02";@MoY=qw(Januar Februar März April Mai Juni Juli August September Oktober November Dezember);@MoYs=qw(Jan Feb Mär Apr Mai Jun Jul Aug Sep Okt Nov Dez);@DoW=qw(Sonntag Montag Dienstag Mittwoch Donnerstag Freitag Samstag);@DoWs=qw(Son Mon Die Mit Don Fre Sam);use Date::Language::English ();@AMPM=@{Date::Language::English::AMPM};@Dsuf=@{Date::Language::English::Dsuf};@MoY{@MoY}=(0 .. scalar(@MoY));@MoY{@MoYs}=(0 .. scalar(@MoYs));@DoW{@DoW}=(0 .. scalar(@DoW));@DoW{@DoWs}=(0 .. scalar(@DoWs));sub format_a {$DoWs[$_[0]->[6]]}sub format_A {$DoW[$_[0]->[6]]}sub format_b {$MoYs[$_[0]->[4]]}sub format_B {$MoY[$_[0]->[4]]}sub format_h {$MoYs[$_[0]->[4]]}sub format_p {$_[0]->[2]>= 12 ? $AMPM[1]: $AMPM[0]}sub format_o {sprintf("%2d.",$_[0]->[3])}1;
+DATE_LANGUAGE_GERMAN
+
+$fatpacked{"Date/Language/Greek.pm"} = '#line '.(1+__LINE__).' "'.__FILE__."\"\n".<<'DATE_LANGUAGE_GREEK';
+  package Date::Language::Greek;use utf8;use Date::Language ();use vars qw(@ISA @DoW @DoWs @MoY @MoYs @AMPM @Dsuf %MoY %DoW $VERSION);@ISA=qw(Date::Language);$VERSION="1.00";@DoW=("\x{039a}\x{03c5}\x{03c1}\x{03b9}\x{03b1}\x{03ba}\x{03ae}","\x{0394}\x{03b5}\x{03c5}\x{03c4}\x{03ad}\x{03c1}\x{03b1}","\x{03a4}\x{03c1}\x{03af}\x{03c4}\x{03b7}","\x{03a4}\x{03b5}\x{03c4}\x{03ac}\x{03c1}\x{03c4}\x{03b7}","\x{03a0}\x{03ad}\x{03bc}\x{03c0}\x{03c4}\x{03b7}","\x{03a0}\x{03b1}\x{03c1}\x{03b1}\x{03c3}\x{03ba}\x{03b5}\x{03c5}\x{03ae}","\x{03a3}\x{03ac}\x{03b2}\x{03b2}\x{03b1}\x{03c4}\x{03bf}",);@MoY=("\x{0399}\x{03b1}\x{03bd}\x{03bf}\x{03c5}\x{03b1}\x{03c1}\x{03af}\x{03bf}\x{03c5}","\x{03a6}\x{03b5}\x{03b2}\x{03c1}\x{03bf}\x{03c5}\x{03b1}\x{03c1}\x{03af}\x{03bf}\x{03c5}","\x{039c}\x{03b1}\x{03c1}\x{03c4}\x{03af}\x{03bf}\x{03c5}","\x{0391}\x{03c0}\x{03c1}\x{03b9}\x{03bb}\x{03af}\x{03c5}","\x{039c}\x{03b1}\x{0390}\x{03bf}\x{03c5}","\x{0399}\x{03bf}\x{03c5}\x{03bd}\x{03af}\x{03bf}\x{03c5}","\x{0399}\x{03bf}\x{03c5}\x{03bb}\x{03af}\x{03bf}\x{03c5}","\x{0391}\x{03c5}\x{03b3}\x{03bf}\x{03cd}\x{03c3}\x{03c4}\x{03bf}\x{03c5}","\x{03a3}\x{03b5}\x{03c0}\x{03c4}\x{03b5}\x{03bc}\x{03c4}\x{03bf}\x{03c5}","\x{039f}\x{03ba}\x{03c4}\x{03c9}\x{03b2}\x{03c1}\x{03af}\x{03bf}\x{03c5}","\x{039d}\x{03bf}\x{03b5}\x{03bc}\x{03b2}\x{03c1}\x{03af}\x{03bf}\x{03c5}","\x{0394}\x{03b5}\x{03ba}\x{03b5}\x{03bc}\x{03b2}\x{03c1}\x{03bf}\x{03c5}",);@DoWs=("\x{039a}\x{03c5}","\x{0394}\x{03b5}","\x{03a4}\x{03c1}","\x{03a4}\x{03b5}","\x{03a0}\x{03b5}","\x{03a0}\x{03b1}","\x{03a3}\x{03b1}",);@MoYs=("\x{0399}\x{03b1}\x{03bd}","\x{03a6}\x{03b5}","\x{039c}\x{03b1}\x{03c1}","\x{0391}\x{03c0}\x{03c1}","\x{039c}\x{03b1}","\x{0399}\x{03bf}\x{03c5}\x{03bd}","\x{0399}\x{03bf}\x{03c5}\x{03bb}","\x{0391}\x{03c5}\x{03b3}","\x{03a3}\x{03b5}\x{03c0}","\x{039f}\x{03ba}","\x{039d}\x{03bf}","\x{0394}\x{03b5}",);@AMPM=("\x{03c0}\x{03bc}","\x{03bc}\x{03bc}");@Dsuf=("\x{03b7}" x 31);@MoY{@MoY}=(0 .. scalar(@MoY));@MoY{@MoYs}=(0 .. scalar(@MoYs));@DoW{@DoW}=(0 .. scalar(@DoW));@DoW{@DoWs}=(0 .. scalar(@DoWs));sub format_a {$DoWs[$_[0]->[6]]}sub format_A {$DoW[$_[0]->[6]]}sub format_b {$MoYs[$_[0]->[4]]}sub format_B {$MoY[$_[0]->[4]]}sub format_h {$MoYs[$_[0]->[4]]}sub format_o {sprintf("%2d%s",$_[0]->[3],"\x{03b7}")}sub format_p {$_[0]->[2]>= 12 ? $AMPM[1]: $AMPM[0]}1;
+DATE_LANGUAGE_GREEK
+
+$fatpacked{"Date/Language/Hungarian.pm"} = '#line '.(1+__LINE__).' "'.__FILE__."\"\n".<<'DATE_LANGUAGE_HUNGARIAN';
+  package Date::Language::Hungarian;use strict;use warnings;use base "Date::Language";use vars qw(@DoW @DoWs @MoY @MoYs @AMPM @Dsuf %MoY %DoW $VERSION);$VERSION="1.01";@DoW=qw(Vasárnap Hétfõ Kedd Szerda Csütörtök Péntek Szombat);@MoY=qw(Január Február Március Április Május Június Július Augusztus Szeptember Október November December);@DoWs=map {substr($_,0,3)}@DoW;@MoYs=map {substr($_,0,3)}@MoY;@AMPM=qw(DE. DU.);@Dsuf=(".")x 31;@MoY{@MoY}=(0 .. scalar(@MoY));@MoY{@MoYs}=(0 .. scalar(@MoYs));@DoW{@DoW}=(0 .. scalar(@DoW));@DoW{@DoWs}=(0 .. scalar(@DoWs));sub format_a {$DoWs[$_[0]->[6]]}sub format_A {$DoW[$_[0]->[6]]}sub format_b {$MoYs[$_[0]->[4]]}sub format_B {$MoY[$_[0]->[4]]}sub format_h {$MoYs[$_[0]->[4]]}sub format_p {$_[0]->[2]>= 12 ? $AMPM[1]: $AMPM[0]}sub format_P {lc($_[0]->[2]>= 12 ? $AMPM[1]: $AMPM[0])}sub format_o {$_[0]->[3].'.'}sub format_D {&format_y ."." .&format_m ."." .&format_d}sub format_y {sprintf("%02d",$_[0]->[5]% 100)}sub format_d {sprintf("%02d",$_[0]->[3])}sub format_m {sprintf("%02d",$_[0]->[4]+ 1)}1;
+DATE_LANGUAGE_HUNGARIAN
+
+$fatpacked{"Date/Language/Icelandic.pm"} = '#line '.(1+__LINE__).' "'.__FILE__."\"\n".<<'DATE_LANGUAGE_ICELANDIC';
+  package Date::Language::Icelandic;use Date::Language ();use vars qw(@ISA @DoW @DoWs @MoY @MoYs @AMPM @Dsuf %MoY %DoW $VERSION);@ISA=qw(Date::Language);$VERSION="1.01";@MoY=qw(Janúar Febrúar Mars Apríl Maí Júni Júli Ágúst September Október Nóvember Desember);@MoYs=qw(Jan Feb Mar Apr Maí Jún Júl Ágú Sep Okt Nóv Des);@DoW=qw(Sunnudagur Mánudagur Þriðjudagur Miðvikudagur Fimmtudagur Föstudagur Laugardagur Sunnudagur);@DoWs=qw(Sun Mán Þri Mið Fim Fös Lau Sun);use Date::Language::English ();@AMPM=@{Date::Language::English::AMPM};@Dsuf=@{Date::Language::English::Dsuf};@MoY{@MoY}=(0 .. scalar(@MoY));@MoY{@MoYs}=(0 .. scalar(@MoYs));@DoW{@DoW}=(0 .. scalar(@DoW));@DoW{@DoWs}=(0 .. scalar(@DoWs));sub format_a {$DoWs[$_[0]->[6]]}sub format_A {$DoW[$_[0]->[6]]}sub format_b {$MoYs[$_[0]->[4]]}sub format_B {$MoY[$_[0]->[4]]}sub format_h {$MoYs[$_[0]->[4]]}sub format_p {$_[0]->[2]>= 12 ? $AMPM[1]: $AMPM[0]}1;
+DATE_LANGUAGE_ICELANDIC
+
+$fatpacked{"Date/Language/Italian.pm"} = '#line '.(1+__LINE__).' "'.__FILE__."\"\n".<<'DATE_LANGUAGE_ITALIAN';
+  package Date::Language::Italian;use Date::Language ();use vars qw(@ISA @DoW @DoWs @MoY @MoYs @AMPM @Dsuf %MoY %DoW $VERSION);@ISA=qw(Date::Language);$VERSION="1.01";@MoY=qw(Gennaio Febbraio Marzo Aprile Maggio Giugno Luglio Agosto Settembre Ottobre Novembre Dicembre);@MoYs=qw(Gen Feb Mar Apr Mag Giu Lug Ago Set Ott Nov Dic);@DoW=qw(Domenica Lunedi Martedi Mercoledi Giovedi Venerdi Sabato);@DoWs=qw(Dom Lun Mar Mer Gio Ven Sab);use Date::Language::English ();@AMPM=@{Date::Language::English::AMPM};@Dsuf=@{Date::Language::English::Dsuf};@MoY{@MoY}=(0 .. scalar(@MoY));@MoY{@MoYs}=(0 .. scalar(@MoYs));@DoW{@DoW}=(0 .. scalar(@DoW));@DoW{@DoWs}=(0 .. scalar(@DoWs));sub format_a {$DoWs[$_[0]->[6]]}sub format_A {$DoW[$_[0]->[6]]}sub format_b {$MoYs[$_[0]->[4]]}sub format_B {$MoY[$_[0]->[4]]}sub format_h {$MoYs[$_[0]->[4]]}sub format_p {$_[0]->[2]>= 12 ? $AMPM[1]: $AMPM[0]}1;
+DATE_LANGUAGE_ITALIAN
+
+$fatpacked{"Date/Language/Norwegian.pm"} = '#line '.(1+__LINE__).' "'.__FILE__."\"\n".<<'DATE_LANGUAGE_NORWEGIAN';
+  package Date::Language::Norwegian;use Date::Language ();use vars qw(@ISA @DoW @DoWs @MoY @MoYs @AMPM @Dsuf %MoY %DoW $VERSION);@ISA=qw(Date::Language);$VERSION="1.01";@MoY=qw(Januar Februar Mars April Mai Juni Juli August September Oktober November Desember);@MoYs=qw(Jan Feb Mar Apr Mai Jun Jul Aug Sep Okt Nov Des);@DoW=qw(Søndag Mandag Tirsdag Onsdag Torsdag Fredag Lørdag Søndag);@DoWs=qw(Søn Man Tir Ons Tor Fre Lør Søn);use Date::Language::English ();@AMPM=@{Date::Language::English::AMPM};@Dsuf=@{Date::Language::English::Dsuf};@MoY{@MoY}=(0 .. scalar(@MoY));@MoY{@MoYs}=(0 .. scalar(@MoYs));@DoW{@DoW}=(0 .. scalar(@DoW));@DoW{@DoWs}=(0 .. scalar(@DoWs));sub format_a {$DoWs[$_[0]->[6]]}sub format_A {$DoW[$_[0]->[6]]}sub format_b {$MoYs[$_[0]->[4]]}sub format_B {$MoY[$_[0]->[4]]}sub format_h {$MoYs[$_[0]->[4]]}sub format_p {$_[0]->[2]>= 12 ? $AMPM[1]: $AMPM[0]}1;
+DATE_LANGUAGE_NORWEGIAN
+
+$fatpacked{"Date/Language/Occitan.pm"} = '#line '.(1+__LINE__).' "'.__FILE__."\"\n".<<'DATE_LANGUAGE_OCCITAN';
+  package Date::Language::Occitan;use Date::Language ();use vars qw(@ISA @DoW @DoWs @MoY @MoYs @AMPM @Dsuf %MoY %DoW $VERSION);@ISA=qw(Date::Language);$VERSION="1.04";@DoW=qw(dimenge diluns dimars dimÃ¨cres dijÃ²us divendres dissabte);@MoY=qw(geniÃ¨r febriÃ¨r mars abrial mai junh julhet agost octÃ²bre novembre decembre);@DoWs=map {substr($_,0,3)}@DoW;@MoYs=map {substr($_,0,3)}@MoY;$MoYs[6]='jul';@AMPM=qw(AM PM);@Dsuf=((qw(er e e e e e e e e e))x 3,'er');@MoY{@MoY}=(0 .. scalar(@MoY));@MoY{@MoYs}=(0 .. scalar(@MoYs));@DoW{@DoW}=(0 .. scalar(@DoW));@DoW{@DoWs}=(0 .. scalar(@DoWs));sub format_a {$DoWs[$_[0]->[6]]}sub format_A {$DoW[$_[0]->[6]]}sub format_b {$MoYs[$_[0]->[4]]}sub format_B {$MoY[$_[0]->[4]]}sub format_h {$MoYs[$_[0]->[4]]}sub format_p {$_[0]->[2]>= 12 ? $AMPM[1]: $AMPM[0]}1;
+DATE_LANGUAGE_OCCITAN
+
+$fatpacked{"Date/Language/Oromo.pm"} = '#line '.(1+__LINE__).' "'.__FILE__."\"\n".<<'DATE_LANGUAGE_OROMO';
+  package Date::Language::Oromo;use Date::Language ();use vars qw(@ISA @DoW @DoWs @MoY @MoYs @AMPM @Dsuf %MoY %DoW $VERSION);@ISA=qw(Date::Language);$VERSION="0.99";@DoW=qw(Dilbata Wiixata Qibxata Roobii Kamiisa Jimaata Sanbata);@MoY=qw(Amajjii Guraandhala Bitooteessa Elba Caamsa Waxabajjii Adooleessa Hagayya Fuulbana Onkololeessa Sadaasa Muddee);@DoWs=map {substr($_,0,3)}@DoW;@MoYs=map {substr($_,0,3)}@MoY;@AMPM=qw(WD WB);@Dsuf=(qw(th st nd rd th th th th th th))x 3;@Dsuf[11,12,13]=qw(th th th);@Dsuf[30,31]=qw(th st);@MoY{@MoY}=(0 .. scalar(@MoY));@MoY{@MoYs}=(0 .. scalar(@MoYs));@DoW{@DoW}=(0 .. scalar(@DoW));@DoW{@DoWs}=(0 .. scalar(@DoWs));sub format_a {$DoWs[$_[0]->[6]]}sub format_A {$DoW[$_[0]->[6]]}sub format_b {$MoYs[$_[0]->[4]]}sub format_B {$MoY[$_[0]->[4]]}sub format_h {$MoYs[$_[0]->[4]]}sub format_p {$_[0]->[2]>= 12 ? $AMPM[1]: $AMPM[0]}1;
+DATE_LANGUAGE_OROMO
+
+$fatpacked{"Date/Language/Romanian.pm"} = '#line '.(1+__LINE__).' "'.__FILE__."\"\n".<<'DATE_LANGUAGE_ROMANIAN';
+  package Date::Language::Romanian;use Date::Language ();use vars qw(@ISA @DoW @DoWs @MoY @MoYs @AMPM @Dsuf %MoY %DoW $VERSION);@ISA=qw(Date::Language);$VERSION="1.01";@MoY=qw(ianuarie februarie martie aprilie mai iunie iulie august septembrie octombrie noembrie decembrie);@DoW=qw(duminica luni marti miercuri joi vineri sambata);@DoWs=map {substr($_,0,3)}@DoW;@MoYs=map {substr($_,0,3)}@MoY;@AMPM=qw(AM PM);@Dsuf=('')x 31;@MoY{@MoY}=(0 .. scalar(@MoY));@MoY{@MoYs}=(0 .. scalar(@MoYs));@DoW{@DoW}=(0 .. scalar(@DoW));@DoW{@DoWs}=(0 .. scalar(@DoWs));sub format_a {$DoWs[$_[0]->[6]]}sub format_A {$DoW[$_[0]->[6]]}sub format_b {$MoYs[$_[0]->[4]]}sub format_B {$MoY[$_[0]->[4]]}sub format_h {$MoYs[$_[0]->[4]]}sub format_p {$_[0]->[2]>= 12 ? $AMPM[1]: $AMPM[0]}1;
+DATE_LANGUAGE_ROMANIAN
+
+$fatpacked{"Date/Language/Russian.pm"} = '#line '.(1+__LINE__).' "'.__FILE__."\"\n".<<'DATE_LANGUAGE_RUSSIAN';
+  package Date::Language::Russian;use vars qw(@ISA @DoW @DoWs @MoY @MoYs @MoY2 @AMPM %MoY %DoW $VERSION);@ISA=qw(Date::Language Date::Format::Generic);$VERSION="1.01";@MoY=qw(ñÎ×ÁÒÑ æÅ×ÒÁÌÑ íÁÒÔÁ áÐÒÅÌÑ íÁÑ éÀÎÑ éÀÌÑ á×ÇÕÓÔÁ óÅÎÔÑÂÒÑ ïËÔÑÂÒÑ îÏÑÂÒÑ äÅËÁÂÒÑ);@MoY2=qw(ñÎ×ÁÒØ æÅ×ÒÁÌØ íÁÒÔ áÐÒÅÌØ íÁÊ éÀÎØ éÀÌØ á×ÇÕÓÔ óÅÎÔÑÂÒØ ïËÔÑÂÒØ îÏÑÂÒØ äÅËÁÂÒØ);@MoYs=qw(ñÎ× æÅ× íÒÔ áÐÒ íÁÊ éÀÎ éÀÌ á×Ç óÅÎ ïËÔ îÏÑ äÅË);@DoW=qw(ðÏÎÅÄÅÌØÎÉË ÷ÔÏÒÎÉË óÒÅÄÁ þÅÔ×ÅÒÇ ðÑÔÎÉÃÁ óÕÂÂÏÔÁ ÷ÏÓËÒÅÓÅÎØÅ);@DoWs=qw(ðÎ ÷Ô óÒ þÔ ðÔ óÂ ÷Ó);@DoWs2=qw(ðÎÄ ÷ÔÒ óÒÄ þÔ× ðÔÎ óÂÔ ÷ÓË);@AMPM=qw(ÄÐ ÐÐ);@MoY{@MoY}=(0 .. scalar(@MoY));@MoY{@MoYs}=(0 .. scalar(@MoYs));@DoW{@DoW}=(0 .. scalar(@DoW));@DoW{@DoWs}=(0 .. scalar(@DoWs));sub format_a {$DoWs[$_[0]->[6]]}sub format_A {$DoW[$_[0]->[6]]}sub format_b {$MoYs[$_[0]->[4]]}sub format_B {$MoY[$_[0]->[4]]}sub format_h {$MoYs[$_[0]->[4]]}sub format_p {$_[0]->[2]>= 12 ? $AMPM[1]: $AMPM[0]}sub format_d {$_[0]->[3]}sub format_m {$_[0]->[4]+ 1}sub format_o {$_[0]->[3].'.'}sub format_Q {$MoY2[$_[0]->[4]]}sub str2time {my ($self,$value)=@_;map {$value=~s/(\s|^)$DoWs2[$_](\s)/$DoWs[$_]$2/ig}(0..6);$value=~s/(\s+|^)íÁÒ(\s+)/$1íÒÔ$2/;return$self->SUPER::str2time($value)}1;
+DATE_LANGUAGE_RUSSIAN
+
+$fatpacked{"Date/Language/Russian_cp1251.pm"} = '#line '.(1+__LINE__).' "'.__FILE__."\"\n".<<'DATE_LANGUAGE_RUSSIAN_CP1251';
+  package Date::Language::Russian_cp1251;use Date::Language ();use vars qw(@ISA @DoW @DoWs @MoY @MoYs @AMPM @Dsuf %MoY %DoW $VERSION);@ISA=qw(Date::Language);$VERSION="1.01";@DoW=qw(Âîñêðåñåíüå Ïîíåäåëüíèê Âòîðíèê Ñðåäà ×åòâåðã Ïÿòíèöà Ñóááîòà);@MoY=qw(ßíâàðü Ôåâðàëü Ìàðò Àïðåëü Ìàé Èþíü Èþëü Àâãóñò Ñåíòÿáðü Îêòÿáðü Íîÿáðü Äåêàáðü);@DoWs=qw(Âñê Ïíä Âòð Ñðä ×òâ Ïòí Ñáò);@MoYs=map {substr($_,0,3)}@MoY;@AMPM=qw(AM PM);@Dsuf=('e')x 31;@MoY{@MoY}=(0 .. scalar(@MoY));@MoY{@MoYs}=(0 .. scalar(@MoYs));@DoW{@DoW}=(0 .. scalar(@DoW));@DoW{@DoWs}=(0 .. scalar(@DoWs));sub format_a {$DoWs[$_[0]->[6]]}sub format_A {$DoW[$_[0]->[6]]}sub format_b {$MoYs[$_[0]->[4]]}sub format_B {$MoY[$_[0]->[4]]}sub format_h {$MoYs[$_[0]->[4]]}sub format_p {$_[0]->[2]>= 12 ? $AMPM[1]: $AMPM[0]}sub format_o {sprintf("%2de",$_[0]->[3])}1;
+DATE_LANGUAGE_RUSSIAN_CP1251
+
+$fatpacked{"Date/Language/Russian_koi8r.pm"} = '#line '.(1+__LINE__).' "'.__FILE__."\"\n".<<'DATE_LANGUAGE_RUSSIAN_KOI8R';
+  package Date::Language::Russian_koi8r;use Date::Language ();use vars qw(@ISA @DoW @DoWs @MoY @MoYs @AMPM @Dsuf %MoY %DoW $VERSION);@ISA=qw(Date::Language);$VERSION="1.01";@DoW=qw(÷ÏÓËÒÅÓÅÎØÅ ðÏÎÅÄÅÌØÎÉË ÷ÔÏÒÎÉË óÒÅÄÁ þÅÔ×ÅÒÇ ðÑÔÎÉÃÁ óÕÂÂÏÔÁ);@MoY=qw(ñÎ×ÁÒØ æÅ×ÒÁÌØ íÁÒÔ áÐÒÅÌØ íÁÊ éÀÎØ éÀÌØ á×ÇÕÓÔ óÅÎÔÑÂÒØ ïËÔÑÂÒØ îÏÑÂÒØ äÅËÁÂÒØ);@DoWs=qw(÷ÓË ðÎÄ ÷ÔÒ óÒÄ þÔ× ðÔÎ óÂÔ);@MoYs=map {substr($_,0,3)}@MoY;@AMPM=qw(AM PM);@Dsuf=('e')x 31;@MoY{@MoY}=(0 .. scalar(@MoY));@MoY{@MoYs}=(0 .. scalar(@MoYs));@DoW{@DoW}=(0 .. scalar(@DoW));@DoW{@DoWs}=(0 .. scalar(@DoWs));sub format_a {$DoWs[$_[0]->[6]]}sub format_A {$DoW[$_[0]->[6]]}sub format_b {$MoYs[$_[0]->[4]]}sub format_B {$MoY[$_[0]->[4]]}sub format_h {$MoYs[$_[0]->[4]]}sub format_p {$_[0]->[2]>= 12 ? $AMPM[1]: $AMPM[0]}sub format_o {sprintf("%2de",$_[0]->[3])}1;
+DATE_LANGUAGE_RUSSIAN_KOI8R
+
+$fatpacked{"Date/Language/Sidama.pm"} = '#line '.(1+__LINE__).' "'.__FILE__."\"\n".<<'DATE_LANGUAGE_SIDAMA';
+  package Date::Language::Sidama;use Date::Language ();use vars qw(@ISA @DoW @DoWs @MoY @MoYs @AMPM @Dsuf %MoY %DoW $VERSION);@ISA=qw(Date::Language);$VERSION="0.99";@DoW=qw(Sambata Sanyo Maakisanyo Roowe Hamuse Arbe Qidaame);@MoY=qw(January February March April May June July August September October November December);@DoWs=map {substr($_,0,3)}@DoW;@MoYs=map {substr($_,0,3)}@MoY;@AMPM=qw(soodo hawwaro);@Dsuf=(qw(th st nd rd th th th th th th))x 3;@Dsuf[11,12,13]=qw(th th th);@Dsuf[30,31]=qw(th st);@MoY{@MoY}=(0 .. scalar(@MoY));@MoY{@MoYs}=(0 .. scalar(@MoYs));@DoW{@DoW}=(0 .. scalar(@DoW));@DoW{@DoWs}=(0 .. scalar(@DoWs));sub format_a {$DoWs[$_[0]->[6]]}sub format_A {$DoW[$_[0]->[6]]}sub format_b {$MoYs[$_[0]->[4]]}sub format_B {$MoY[$_[0]->[4]]}sub format_h {$MoYs[$_[0]->[4]]}sub format_p {$_[0]->[2]>= 12 ? $AMPM[1]: $AMPM[0]}1;
+DATE_LANGUAGE_SIDAMA
+
+$fatpacked{"Date/Language/Somali.pm"} = '#line '.(1+__LINE__).' "'.__FILE__."\"\n".<<'DATE_LANGUAGE_SOMALI';
+  package Date::Language::Somali;use Date::Language ();use vars qw(@ISA @DoW @DoWs @MoY @MoYs @AMPM @Dsuf %MoY %DoW $VERSION);@ISA=qw(Date::Language);$VERSION="0.99";@DoW=qw(Axad Isniin Salaaso Arbaco Khamiis Jimco Sabti);@MoY=("Bisha Koobaad","Bisha Labaad","Bisha Saddexaad","Bisha Afraad","Bisha Shanaad","Bisha Lixaad","Bisha Todobaad","Bisha Sideedaad","Bisha Sagaalaad","Bisha Tobnaad","Bisha Kow iyo Tobnaad","Bisha Laba iyo Tobnaad");@DoWs=map {substr($_,0,3)}@DoW;@MoYs=("Kob","Lab","Sad","Afr","Sha","Lix","Tod","Sid","Sag","Tob","KIT","LIT");@AMPM=qw(SN GN);@Dsuf=(qw(th st nd rd th th th th th th))x 3;@Dsuf[11,12,13]=qw(th th th);@Dsuf[30,31]=qw(th st);@MoY{@MoY}=(0 .. scalar(@MoY));@MoY{@MoYs}=(0 .. scalar(@MoYs));@DoW{@DoW}=(0 .. scalar(@DoW));@DoW{@DoWs}=(0 .. scalar(@DoWs));sub format_a {$DoWs[$_[0]->[6]]}sub format_A {$DoW[$_[0]->[6]]}sub format_b {$MoYs[$_[0]->[4]]}sub format_B {$MoY[$_[0]->[4]]}sub format_h {$MoYs[$_[0]->[4]]}sub format_p {$_[0]->[2]>= 12 ? $AMPM[1]: $AMPM[0]}1;
+DATE_LANGUAGE_SOMALI
+
+$fatpacked{"Date/Language/Spanish.pm"} = '#line '.(1+__LINE__).' "'.__FILE__."\"\n".<<'DATE_LANGUAGE_SPANISH';
+  package Date::Language::Spanish;use Date::Language ();use vars qw(@ISA @DoW @DoWs @MoY @MoYs @AMPM @Dsuf %MoY %DoW $VERSION);@ISA=qw(Date::Language);$VERSION="1.00";@DoW=qw(domingo lunes martes miércoles jueves viernes sábado);@MoY=qw(enero febrero marzo abril mayo junio julio agosto septiembre octubre noviembre diciembre);@DoWs=map {substr($_,0,3)}@DoW;@MoYs=map {substr($_,0,3)}@MoY;@AMPM=qw(AM PM);@Dsuf=((qw(ro do ro to to to mo vo no mo))x 3,'ro');@MoY{@MoY}=(0 .. scalar(@MoY));@MoY{@MoYs}=(0 .. scalar(@MoYs));@DoW{@DoW}=(0 .. scalar(@DoW));@DoW{@DoWs}=(0 .. scalar(@DoWs));sub format_a {$DoWs[$_[0]->[6]]}sub format_A {$DoW[$_[0]->[6]]}sub format_b {$MoYs[$_[0]->[4]]}sub format_B {$MoY[$_[0]->[4]]}sub format_h {$MoYs[$_[0]->[4]]}sub format_p {$_[0]->[2]>= 12 ? $AMPM[1]: $AMPM[0]}1;
+DATE_LANGUAGE_SPANISH
+
+$fatpacked{"Date/Language/Swedish.pm"} = '#line '.(1+__LINE__).' "'.__FILE__."\"\n".<<'DATE_LANGUAGE_SWEDISH';
+  package Date::Language::Swedish;use Date::Language ();use vars qw(@ISA @DoW @DoWs @MoY @MoYs @AMPM @Dsuf %MoY %DoW $VERSION);@ISA=qw(Date::Language);$VERSION="1.01";@MoY=qw(januari februari mars april maj juni juli augusti september oktober november december);@MoYs=map {substr($_,0,3)}@MoY;@DoW=map($_ ."dagen",qw(sön mån tis ons tors fre lör));@DoWs=map {substr($_,0,2)}@DoW;@Dsuf=('a' x 2,'e' x 29);use Date::Language::English ();@AMPM=@{Date::Language::English::AMPM};@MoY{@MoY}=(0 .. scalar(@MoY));@MoY{@MoYs}=(0 .. scalar(@MoYs));@DoW{@DoW}=(0 .. scalar(@DoW));@DoW{@DoWs}=(0 .. scalar(@DoWs));sub format_a {$DoWs[$_[0]->[6]]}sub format_A {$DoW[$_[0]->[6]]}sub format_b {$MoYs[$_[0]->[4]]}sub format_B {$MoY[$_[0]->[4]]}sub format_h {$MoYs[$_[0]->[4]]}sub format_p {$_[0]->[2]>= 12 ? $AMPM[1]: $AMPM[0]}sub format_o {sprintf("%2de",$_[0]->[3])}1;
+DATE_LANGUAGE_SWEDISH
+
+$fatpacked{"Date/Language/Tigrinya.pm"} = '#line '.(1+__LINE__).' "'.__FILE__."\"\n".<<'DATE_LANGUAGE_TIGRINYA';
+  package Date::Language::Tigrinya;use Date::Language ();use vars qw(@ISA @DoW @DoWs @MoY @MoYs @AMPM @Dsuf %MoY %DoW $VERSION);@ISA=qw(Date::Language);$VERSION="1.00";@DoW=("\x{1230}\x{1295}\x{1260}\x{1275}","\x{1230}\x{1291}\x{12ed}","\x{1230}\x{1209}\x{1235}","\x{1228}\x{1261}\x{12d5}","\x{1213}\x{1219}\x{1235}","\x{12d3}\x{122d}\x{1262}","\x{1240}\x{12f3}\x{121d}");@MoY=("\x{1303}\x{1295}\x{12e9}\x{12c8}\x{122a}","\x{134c}\x{1265}\x{1229}\x{12c8}\x{122a}","\x{121b}\x{122d}\x{127d}","\x{12a4}\x{1355}\x{1228}\x{120d}","\x{121c}\x{12ed}","\x{1301}\x{1295}","\x{1301}\x{120b}\x{12ed}","\x{12a6}\x{1308}\x{1235}\x{1275}","\x{1234}\x{1355}\x{1274}\x{121d}\x{1260}\x{122d}","\x{12a6}\x{12ad}\x{1270}\x{12cd}\x{1260}\x{122d}","\x{1296}\x{126c}\x{121d}\x{1260}\x{122d}","\x{12f2}\x{1234}\x{121d}\x{1260}\x{122d}");@DoWs=map {substr($_,0,3)}@DoW;@MoYs=map {substr($_,0,3)}@MoY;@AMPM=("\x{1295}/\x{1230}","\x{12F5}/\x{1230}");@Dsuf=("\x{12ed}" x 31);@MoY{@MoY}=(0 .. scalar(@MoY));@MoY{@MoYs}=(0 .. scalar(@MoYs));@DoW{@DoW}=(0 .. scalar(@DoW));@DoW{@DoWs}=(0 .. scalar(@DoWs));sub format_a {$DoWs[$_[0]->[6]]}sub format_A {$DoW[$_[0]->[6]]}sub format_b {$MoYs[$_[0]->[4]]}sub format_B {$MoY[$_[0]->[4]]}sub format_h {$MoYs[$_[0]->[4]]}sub format_p {$_[0]->[2]>= 12 ? $AMPM[1]: $AMPM[0]}1;
+DATE_LANGUAGE_TIGRINYA
+
+$fatpacked{"Date/Language/TigrinyaEritrean.pm"} = '#line '.(1+__LINE__).' "'.__FILE__."\"\n".<<'DATE_LANGUAGE_TIGRINYAERITREAN';
+  package Date::Language::TigrinyaEritrean;use Date::Language ();use vars qw(@ISA @DoW @DoWs @MoY @MoYs @AMPM @Dsuf %MoY %DoW $VERSION);@ISA=qw(Date::Language);$VERSION="1.00";if ($] >= 5.006){@DoW=("\x{1230}\x{1295}\x{1260}\x{1275}","\x{1230}\x{1291}\x{12ed}","\x{1230}\x{1209}\x{1235}","\x{1228}\x{1261}\x{12d5}","\x{1213}\x{1219}\x{1235}","\x{12d3}\x{122d}\x{1262}","\x{1240}\x{12f3}\x{121d}");@MoY=("\x{1303}\x{1295}\x{12e9}\x{12c8}\x{122a}","\x{134c}\x{1265}\x{1229}\x{12c8}\x{122a}","\x{121b}\x{122d}\x{127d}","\x{12a4}\x{1355}\x{1228}\x{120d}","\x{121c}\x{12ed}","\x{1301}\x{1295}","\x{1301}\x{120b}\x{12ed}","\x{12a6}\x{1308}\x{1235}\x{1275}","\x{1234}\x{1355}\x{1274}\x{121d}\x{1260}\x{122d}","\x{12a6}\x{12ad}\x{1270}\x{12cd}\x{1260}\x{122d}","\x{1296}\x{126c}\x{121d}\x{1260}\x{122d}","\x{12f2}\x{1234}\x{121d}\x{1260}\x{122d}");@DoWs=map {substr($_,0,3)}@DoW;@MoYs=map {substr($_,0,3)}@MoY;@AMPM=("\x{1295}/\x{1230}","\x{12F5}/\x{1230}");@Dsuf=("\x{12ed}" x 31)}else {@DoW=("áˆ°áŠ•á‰ á‰µ","áˆ°áŠ‘á‹­","áˆ°áˆ‰áˆµ","áˆ¨á‰¡á‹•","áˆ“áˆ™áˆµ","á‹“áˆ­á‰¢","á‰€á‹³áˆ");@MoY=("áŒ¥áˆª","áˆˆáŠ«á‰²á‰µ","áˆ˜áŒ‹á‰¢á‰µ","áˆšá‹«á‹á‹«","áŒáŠ•á‰¦á‰µ","áˆ°áŠ","áˆ“áˆáˆˆ","áŠáˆ“áˆ°","áˆ˜áˆµáŠ¨áˆ¨áˆ","áŒ¥á‰…áˆá‰²","áˆ•á‹³áˆ­","á‰³áˆ•áˆ³áˆµ");@DoWs=map {substr($_,0,9)}@DoW;@MoYs=map {substr($_,0,9)}@MoY;@AMPM=("áŠ•/áˆ°","á‹µ/áˆ°");@Dsuf=("á‹­" x 31)}@MoY{@MoY}=(0 .. scalar(@MoY));@MoY{@MoYs}=(0 .. scalar(@MoYs));@DoW{@DoW}=(0 .. scalar(@DoW));@DoW{@DoWs}=(0 .. scalar(@DoWs));sub format_a {$DoWs[$_[0]->[6]]}sub format_A {$DoW[$_[0]->[6]]}sub format_b {$MoYs[$_[0]->[4]]}sub format_B {$MoY[$_[0]->[4]]}sub format_h {$MoYs[$_[0]->[4]]}sub format_p {$_[0]->[2]>= 12 ? $AMPM[1]: $AMPM[0]}1;
+DATE_LANGUAGE_TIGRINYAERITREAN
+
+$fatpacked{"Date/Language/TigrinyaEthiopian.pm"} = '#line '.(1+__LINE__).' "'.__FILE__."\"\n".<<'DATE_LANGUAGE_TIGRINYAETHIOPIAN';
+  package Date::Language::TigrinyaEthiopian;use Date::Language ();use vars qw(@ISA @DoW @DoWs @MoY @MoYs @AMPM @Dsuf %MoY %DoW $VERSION);@ISA=qw(Date::Language);$VERSION="1.00";if ($] >= 5.006){@DoW=("\x{1230}\x{1295}\x{1260}\x{1275}","\x{1230}\x{1291}\x{12ed}","\x{1230}\x{1209}\x{1235}","\x{1228}\x{1261}\x{12d5}","\x{1213}\x{1219}\x{1235}","\x{12d3}\x{122d}\x{1262}","\x{1240}\x{12f3}\x{121d}");@MoY=("\x{1303}\x{1295}\x{12e9}\x{12c8}\x{122a}","\x{134c}\x{1265}\x{1229}\x{12c8}\x{122a}","\x{121b}\x{122d}\x{127d}","\x{12a4}\x{1355}\x{1228}\x{120d}","\x{121c}\x{12ed}","\x{1301}\x{1295}","\x{1301}\x{120b}\x{12ed}","\x{12a6}\x{1308}\x{1235}\x{1275}","\x{1234}\x{1355}\x{1274}\x{121d}\x{1260}\x{122d}","\x{12a6}\x{12ad}\x{1270}\x{12cd}\x{1260}\x{122d}","\x{1296}\x{126c}\x{121d}\x{1260}\x{122d}","\x{12f2}\x{1234}\x{121d}\x{1260}\x{122d}");@DoWs=map {substr($_,0,3)}@DoW;@MoYs=map {substr($_,0,3)}@MoY;@AMPM=("\x{1295}/\x{1230}","\x{12F5}/\x{1230}");@Dsuf=("\x{12ed}" x 31)}else {@DoW=("áˆ°áŠ•á‰ á‰µ","áˆ°áŠ‘á‹­","áˆ°áˆ‰áˆµ","áˆ¨á‰¡á‹•","áˆ“áˆ™áˆµ","á‹“áˆ­á‰¢","á‰€á‹³áˆ");@MoY=("áŒƒáŠ•á‹©á‹ˆáˆª","áŒá‰¥áˆ©á‹ˆáˆª","áˆ›áˆ­á‰½","áŠ¤á•áˆ¨áˆ","áˆœá‹­","áŒáŠ•","áŒáˆ‹á‹­","áŠ¦áŒˆáˆµá‰µ","áˆ´á•á‰´áˆá‰ áˆ­","áŠ¦áŠ­á‰°á‹á‰ áˆ­","áŠ–á‰¬áˆá‰ áˆ­","á‹²áˆ´áˆá‰ áˆ­");@DoWs=map {substr($_,0,9)}@DoW;@MoYs=map {substr($_,0,9)}@MoY;@AMPM=("áŠ•/áˆ°","á‹µ/áˆ°");@Dsuf=("á‹­" x 31)}@MoY{@MoY}=(0 .. scalar(@MoY));@MoY{@MoYs}=(0 .. scalar(@MoYs));@DoW{@DoW}=(0 .. scalar(@DoW));@DoW{@DoWs}=(0 .. scalar(@DoWs));sub format_a {$DoWs[$_[0]->[6]]}sub format_A {$DoW[$_[0]->[6]]}sub format_b {$MoYs[$_[0]->[4]]}sub format_B {$MoY[$_[0]->[4]]}sub format_h {$MoYs[$_[0]->[4]]}sub format_p {$_[0]->[2]>= 12 ? $AMPM[1]: $AMPM[0]}1;
+DATE_LANGUAGE_TIGRINYAETHIOPIAN
+
+$fatpacked{"Date/Language/Turkish.pm"} = '#line '.(1+__LINE__).' "'.__FILE__."\"\n".<<'DATE_LANGUAGE_TURKISH';
+  package Date::Language::Turkish;use Date::Language ();use vars qw(@ISA @DoW @DoWs @MoY @MoYs @AMPM @Dsuf %MoY %DoW $VERSION %DsufMAP);@ISA=qw(Date::Language);$VERSION="1.0";@DoW=qw(Pazar Pazartesi Salý Çarþamba Perþembe Cuma Cumartesi);@MoY=qw(Ocak Þubat Mart Nisan Mayýs Haziran Temmuz Aðustos Eylül Ekim Kasým Aralýk);@DoWs=map {substr($_,0,3)}@DoW;$DoWs[1]='Pzt';$DoWs[-1]='Cmt';@MoYs=map {substr($_,0,3)}@MoY;@AMPM=('','');%DsufMAP=((map {$_=>'inci',$_+10=>'inci',$_+20=>'inci'}1,2,5,8),(map {$_=>'nci',$_+10=>'nci',$_+20=>'nci'}7),(map {$_=>'nci',$_+10=>'nci',$_+20=>'nci'}2),(map {$_=>'üncü',$_+10=>'üncü',$_+20=>'üncü'}3,4),(map {$_=>'uncu',$_+10=>'uncu',$_+20=>'uncu'}9),(map {$_=>'ncý',$_+10=>'ncý',$_+20=>'ncý'}6),(map {$_=>'uncu',}10,30),20=>'nci',31=>'inci',);@Dsuf=map{$DsufMAP{$_}}sort {$a <=> $b}keys%DsufMAP;@MoY{@MoY}=(0 .. scalar(@MoY));@MoY{@MoYs}=(0 .. scalar(@MoYs));@DoW{@DoW}=(0 .. scalar(@DoW));@DoW{@DoWs}=(0 .. scalar(@DoWs));sub format_a {$DoWs[$_[0]->[6]]}sub format_A {$DoW[$_[0]->[6]]}sub format_b {$MoYs[$_[0]->[4]]}sub format_B {$MoY[$_[0]->[4]]}sub format_h {$MoYs[$_[0]->[4]]}sub format_p {''}sub format_P {''}sub format_o {sprintf("%2d%s",$_[0]->[3],$Dsuf[$_[0]->[3]-1])}1;
+DATE_LANGUAGE_TURKISH
+
+$fatpacked{"Date/Parse.pm"} = '#line '.(1+__LINE__).' "'.__FILE__."\"\n".<<'DATE_PARSE';
+  package Date::Parse;require 5.000;use strict;use vars qw($VERSION @ISA @EXPORT);use Time::Local;use Carp;use Time::Zone;use Exporter;@ISA=qw(Exporter);@EXPORT=qw(&strtotime &str2time &strptime);$VERSION="2.32";my%month=(january=>0,february=>1,march=>2,april=>3,may=>4,june=>5,july=>6,august=>7,september=>8,sept=>8,october=>9,november=>10,december=>11,);my%day=(sunday=>0,monday=>1,tuesday=>2,tues=>2,wednesday=>3,wednes=>3,thursday=>4,thur=>4,thurs=>4,friday=>5,saturday=>6,);my@suf=(qw(th st nd rd th th th th th th))x 3;@suf[11,12,13]=qw(th th th);map {$month{substr($_,0,3)}=$month{$_}}keys%month;map {$day{substr($_,0,3)}=$day{$_}}keys%day;my$strptime=<<'ESQ';use vars qw($day_ref $mon_ref $suf_ref $obj);sub gen_parser {local($day_ref,$mon_ref,$suf_ref,$obj)=@_;if($obj){my$obj_strptime=$strptime;substr($obj_strptime,index($strptime,"sub")+6,0)=<<'ESQ';my$sub=eval "$obj_strptime" or die $@;return$sub}eval "$strptime" or die $@}*strptime=gen_parser(\%day,\%month,\@suf);sub str2time {my@t=strptime(@_);return undef unless@t;my($ss,$mm,$hh,$day,$month,$year,$zone,$century)=@t;my@lt=localtime(time);$hh ||= 0;$mm ||= 0;$ss ||= 0;my$frac=$ss - int($ss);$ss=int$ss;$month=$lt[4]unless(defined$month);$day=$lt[3]unless(defined$day);$year=($month > $lt[4])? ($lt[5]- 1): $lt[5]unless(defined$year);$year += 1900 if defined$century;return undef unless($month <= 11 && $day >= 1 && $day <= 31 && $hh <= 23 && $mm <= 59 && $ss <= 59);my$result;if (defined$zone){$result=eval {local$SIG{__DIE__}=sub {};timegm($ss,$mm,$hh,$day,$month,$year)};return undef if!defined$result or $result==-1 && join("",$ss,$mm,$hh,$day,$month,$year)ne "595923311169";$result -= $zone}else {$result=eval {local$SIG{__DIE__}=sub {};timelocal($ss,$mm,$hh,$day,$month,$year)};return undef if!defined$result or $result==-1 && join("",$ss,$mm,$hh,$day,$month,$year)ne join("",(localtime(-1))[0..5])}return$result + $frac}1;
+   my %month = map { lc $_ } %$mon_ref;
+   my $daypat = join("|", map { lc $_ } reverse sort keys %$day_ref);
+   my $monpat = join("|", reverse sort keys %month);
+   my $sufpat = join("|", reverse sort map { lc $_ } @$suf_ref);
+  
+   my %ampm = (
+  	'a' => 0,  # AM
+  	'p' => 12, # PM
+  	);
+  
+   my($AM, $PM) = (0,12);
+  
+  sub {
+  
+    my $dtstr = lc shift;
+    my $merid = 24;
+  
+    my($century,$year,$month,$day,$hh,$mm,$ss,$zone,$dst,$frac);
+  
+    $zone = tz_offset(shift) if @_;
+  
+    1 while $dtstr =~ s#\([^\(\)]*\)# #o;
+  
+    $dtstr =~ s#(\A|\n|\Z)# #sog;
+  
+    # ignore day names
+    $dtstr =~ s#([\d\w\s])[\.\,]\s#$1 #sog;
+    $dtstr =~ s/,/ /g;
+    $dtstr =~ s#($daypat)\s*(den\s)?\b# #o;
+    # Time: 12:00 or 12:00:00 with optional am/pm
+  
+    return unless $dtstr =~ /\S/;
+    
+    if ($dtstr =~ s/\s(\d{4})([-:]?)(\d\d?)\2(\d\d?)(?:[-Tt ](\d\d?)(?:([-:]?)(\d\d?)(?:\6(\d\d?)(?:[.,](\d+))?)?)?)?(?=\D)/ /) {
+      ($year,$month,$day,$hh,$mm,$ss,$frac) = ($1,$3-1,$4,$5,$7,$8,$9);
+    }
+  
+    unless (defined $hh) {
+      if ($dtstr =~ s#[:\s](\d\d?):(\d\d?)(:(\d\d?)(?:\.\d+)?)?(z)?\s*(?:([ap])\.?m?\.?)?\s# #o) {
+        ($hh,$mm,$ss) = ($1,$2,$4);
+        $zone = 0 if $5;
+        $merid = $ampm{$6} if $6;
+      }
+  
+      # Time: 12 am
+      
+      elsif ($dtstr =~ s#\s(\d\d?)\s*([ap])\.?m?\.?\s# #o) {
+        ($hh,$mm,$ss) = ($1,0,0);
+        $merid = $ampm{$2};
+      }
+    }
+      
+    if (defined $hh and $hh <= 12 and $dtstr =~ s# ([ap])\.?m?\.?\s# #o) {
+      $merid = $ampm{$1};
+    }
+  
+  
+    unless (defined $year) {
+      # Date: 12-June-96 (using - . or /)
+      
+      if ($dtstr =~ s#\s(\d\d?)([\-\./])($monpat)(\2(\d\d+))?\s# #o) {
+        ($month,$day) = ($month{$3},$1);
+        $year = $5 if $5;
+      }
+      
+      # Date: 12-12-96 (using '-', '.' or '/' )
+      
+      elsif ($dtstr =~ s#\s(\d+)([\-\./])(\d\d?)(\2(\d+))?\s# #o) {
+        ($month,$day) = ($1 - 1,$3);
+  
+        if ($5) {
+  	$year = $5;
+  	# Possible match for 1995-01-24 (short mainframe date format);
+  	($year,$month,$day) = ($1, $3 - 1, $5) if $month > 12;
+  	return if length($year) > 2 and $year < 1901;
+        }
+      }
+      elsif ($dtstr =~ s#\s(\d+)\s*($sufpat)?\s*($monpat)# #o) {
+        ($month,$day) = ($month{$3},$1);
+      }
+      elsif ($dtstr =~ s#($monpat)\s*(\d+)\s*($sufpat)?\s# #o) {
+        ($month,$day) = ($month{$1},$2);
+      }
+      elsif ($dtstr =~ s#($monpat)([\/-])(\d+)[\/-]# #o) {
+        ($month,$day) = ($month{$1},$3);
+      }
+  
+      # Date: 961212
+  
+      elsif ($dtstr =~ s#\s(\d\d)(\d\d)(\d\d)\s# #o) {
+        ($year,$month,$day) = ($1,$2-1,$3);
+      }
+  
+      $year = $1 if !defined($year) and $dtstr =~ s#\s(\d{2}(\d{2})?)[\s\.,]# #o;
+  
+    }
+  
+    # Zone
+  
+    $dst = 1 if $dtstr =~ s#\bdst\b##o;
+  
+    if ($dtstr =~ s#\s"?([a-z]{3,4})(dst|\d+[a-z]*|_[a-z]+)?"?\s# #o) {
+      $dst = 1 if $2 and $2 eq 'dst';
+      $zone = tz_offset($1);
+      return unless defined $zone;
+    }
+    elsif ($dtstr =~ s#\s([a-z]{3,4})?([\-\+]?)-?(\d\d?):?(\d\d)?(00)?\s# #o) {
+      my $m = defined($4) ? "$2$4" : 0;
+      my $h = "$2$3";
+      $zone = defined($1) ? tz_offset($1) : 0;
+      return unless defined $zone;
+      $zone += 60 * ($m + (60 * $h));
+    }
+  
+    if ($dtstr =~ /\S/) {
+      # now for some dumb dates
+      if ($dtstr =~ s/^\s*(ut?|z)\s*$//) {
+        $zone = 0;
+      }
+      elsif ($dtstr =~ s#\s([a-z]{3,4})?([\-\+]?)-?(\d\d?)(\d\d)?(00)?\s# #o) {
+        my $m = defined($4) ? "$2$4" : 0;
+        my $h = "$2$3";
+        $zone = defined($1) ? tz_offset($1) : 0;
+        return unless defined $zone;
+        $zone += 60 * ($m + (60 * $h));
+      }
+  
+      return if $dtstr =~ /\S/o;
+    }
+  
+    if (defined $hh) {
+      if ($hh == 12) {
+        $hh = 0 if $merid == $AM;
+      }
+      elsif ($merid == $PM) {
+        $hh += 12;
+      }
+    }
+  
+    if (defined $year && $year > 1900) {
+      $century = int($year / 100);
+      $year -= 1900;
+    }
+  
+    $zone += 3600 if defined $zone && $dst;
+    $ss += "0.$frac" if $frac;
+  
+    return ($ss,$mm,$hh,$day,$month,$year,$zone,$century);
+  }
+  ESQ
+   shift; # package
+  ESQ
+DATE_PARSE
+
 $fatpacked{"HTTP/Date.pm"} = '#line '.(1+__LINE__).' "'.__FILE__."\"\n".<<'HTTP_DATE';
-  package HTTP::Date;$VERSION="6.02";require Exporter;@ISA=qw(Exporter);@EXPORT=qw(time2str str2time);@EXPORT_OK=qw(parse_date time2iso time2isoz);use strict;require Time::Local;use vars qw(@DoW @MoY %MoY);@DoW=qw(Sun Mon Tue Wed Thu Fri Sat);@MoY=qw(Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec);@MoY{@MoY}=(1..12);my%GMT_ZONE=(GMT=>1,UTC=>1,UT=>1,Z=>1);sub time2str (;$) {my$time=shift;$time=time unless defined$time;my ($sec,$min,$hour,$mday,$mon,$year,$wday)=gmtime($time);sprintf("%s, %02d %s %04d %02d:%02d:%02d GMT",$DoW[$wday],$mday,$MoY[$mon],$year+1900,$hour,$min,$sec)}sub str2time ($;$) {my$str=shift;return undef unless defined$str;if ($str =~ /^[SMTWF][a-z][a-z], (\d\d) ([JFMAJSOND][a-z][a-z]) (\d\d\d\d) (\d\d):(\d\d):(\d\d) GMT$/){return eval {my$t=Time::Local::timegm($6,$5,$4,$1,$MoY{$2}-1,$3);$t < 0 ? undef : $t}}my@d=parse_date($str);return undef unless@d;$d[1]--;my$tz=pop(@d);unless (defined$tz){unless (defined($tz=shift)){return eval {my$frac=$d[-1];$frac -= ($d[-1]=int($frac));my$t=Time::Local::timelocal(reverse@d)+ $frac;$t < 0 ? undef : $t}}}my$offset=0;if ($GMT_ZONE{uc$tz}){}elsif ($tz =~ /^([-+])?(\d\d?):?(\d\d)?$/){$offset=3600 * $2;$offset += 60 * $3 if $3;$offset *= -1 if $1 && $1 eq '-'}else {eval {require Time::Zone}|| return undef;$offset=Time::Zone::tz_offset($tz);return undef unless defined$offset}return eval {my$frac=$d[-1];$frac -= ($d[-1]=int($frac));my$t=Time::Local::timegm(reverse@d)+ $frac;$t < 0 ? undef : $t - $offset}}sub parse_date ($) {local($_)=shift;return unless defined;s/^\s+//;s/^(?:Sun|Mon|Tue|Wed|Thu|Fri|Sat)[a-z]*,?\s*//i;my($day,$mon,$yr,$hr,$min,$sec,$tz,$ampm);(($day,$mon,$yr,$hr,$min,$sec,$tz)=/^
-  	 (\d\d?)               # day
-  	    (?:\s+|[-\/])
-  	 (\w+)                 # month
-  	    (?:\s+|[-\/])
-  	 (\d+)                 # year
-  	 (?:
-  	       (?:\s+|:)       # separator before clock
-  	    (\d\d?):(\d\d)     # hour:min
-  	    (?::(\d\d))?       # optional seconds
-  	 )?                    # optional clock
-  	    \s*
-  	 ([-+]?\d{2,4}|(?![APap][Mm]\b)[A-Za-z]+)? # timezone
-  	    \s*
-  	 (?:\(\w+\)|\w{3,})?   # ASCII representation of timezone.
-  	    \s*$
-  	/x)|| (($mon,$day,$hr,$min,$sec,$tz,$yr)=/^
-  	 (\w{1,3})             # month
-  	    \s+
-  	 (\d\d?)               # day
-  	    \s+
-  	 (\d\d?):(\d\d)        # hour:min
-  	 (?::(\d\d))?          # optional seconds
-  	    \s+
-  	 (?:([A-Za-z]+)\s+)?   # optional timezone
-  	 (\d+)                 # year
-  	    \s*$               # allow trailing whitespace
-  	/x)|| (($mon,$day,$yr,$hr,$min,$sec)=/^
-  	 (\w{3})               # month
-  	    \s+
-  	 (\d\d?)               # day
-  	    \s+
-  	 (?:
-  	    (\d\d\d\d) |       # year
-  	    (\d{1,2}):(\d{2})  # hour:min
+  package HTTP::Date;use strict;our$VERSION='6.05';require Exporter;our@ISA=qw(Exporter);our@EXPORT=qw(time2str str2time);our@EXPORT_OK=qw(parse_date time2iso time2isoz);require Time::Local;our (@DoW,@MoY,%MoY);@DoW=qw(Sun Mon Tue Wed Thu Fri Sat);@MoY=qw(Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec);@MoY{@MoY}=(1 .. 12);my%GMT_ZONE=(GMT=>1,UTC=>1,UT=>1,Z=>1);sub time2str (;$) {my$time=shift;$time=time unless defined$time;my ($sec,$min,$hour,$mday,$mon,$year,$wday)=gmtime($time);sprintf("%s, %02d %s %04d %02d:%02d:%02d GMT",$DoW[$wday],$mday,$MoY[$mon],$year + 1900,$hour,$min,$sec)}sub str2time ($;$) {my$str=shift;return undef unless defined$str;if ($str =~ /^[SMTWF][a-z][a-z], (\d\d) ([JFMAJSOND][a-z][a-z]) (\d\d\d\d) (\d\d):(\d\d):(\d\d) GMT$/){return eval {my$t=Time::Local::timegm($6,$5,$4,$1,$MoY{$2}- 1,$3);$t < 0 ? undef : $t}}my@d=parse_date($str);return undef unless@d;$d[1]--;my$tz=pop(@d);unless (defined$tz){unless (defined($tz=shift)){return eval {my$frac=$d[-1];$frac -= ($d[-1]=int($frac));my$t=Time::Local::timelocal(reverse@d)+ $frac;$t < 0 ? undef : $t}}}my$offset=0;if ($GMT_ZONE{uc$tz }){}elsif ($tz =~ /^([-+])?(\d\d?):?(\d\d)?$/){$offset=3600 * $2;$offset += 60 * $3 if $3;$offset *= -1 if $1 && $1 eq '-'}else {eval {require Time::Zone}|| return undef;$offset=Time::Zone::tz_offset($tz);return undef unless defined$offset}return eval {my$frac=$d[-1];$frac -= ($d[-1]=int($frac));my$t=Time::Local::timegm(reverse@d)+ $frac;$t < 0 ? undef : $t - $offset}}sub parse_date ($) {local ($_)=shift;return unless defined;s/^\s+//;s/^(?:Sun|Mon|Tue|Wed|Thu|Fri|Sat)[a-z]*,?\s*//i;my ($day,$mon,$yr,$hr,$min,$sec,$tz,$ampm);(($day,$mon,$yr,$hr,$min,$sec,$tz)=/^
+       (\d\d?)               # day
+          (?:\s+|[-\/])
+       (\w+)                 # month
+          (?:\s+|[-\/])
+       (\d+)                 # year
+       (?:
+             (?:\s+|:)       # separator before clock
+          (\d\d?):(\d\d)     # hour:min
+          (?::(\d\d))?       # optional seconds
+       )?                    # optional clock
+          \s*
+       ([-+]?\d{2,4}|(?![APap][Mm]\b)[A-Za-z]+)? # timezone
+          \s*
+       (?:\(\w+\)|\w{3,})?   # ASCII representation of timezone.
+          \s*$
+      /x)|| (($mon,$day,$hr,$min,$sec,$tz,$yr)=/^
+       (\w{1,3})             # month
+          \s+
+       (\d\d?)               # day
+          \s+
+       (\d\d?):(\d\d)        # hour:min
+       (?::(\d\d))?          # optional seconds
+          \s+
+       (?:([A-Za-z]+)\s+)?   # optional timezone
+       (\d+)                 # year
+          \s*$               # allow trailing whitespace
+      /x)|| (($mon,$day,$yr,$hr,$min,$sec)=/^
+       (\w{3})               # month
+          \s+
+       (\d\d?)               # day
+          \s+
+       (?:
+          (\d\d\d\d) |       # year
+          (\d{1,2}):(\d{2})  # hour:min
               (?::(\d\d))?       # optional seconds
-  	 )
-  	 \s*$
+       )
+       \s*$
          /x)|| (($yr,$mon,$day,$hr,$min,$sec,$tz)=/^
-  	  (\d{4})              # year
-  	     [-\/]?
-  	  (\d\d?)              # numerical month
-  	     [-\/]?
-  	  (\d\d?)              # day
-  	 (?:
-  	       (?:\s+|[-:Tt])  # separator before clock
-  	    (\d\d?):?(\d\d)    # hour:min
-  	    (?::?(\d\d(?:\.\d*)?))?  # optional seconds (and fractional)
-  	 )?                    # optional clock
-  	    \s*
-  	 ([-+]?\d\d?:?(:?\d\d)?
-  	  |Z|z)?               # timezone  (Z is "zero meridian", i.e. GMT)
-  	    \s*$
-  	/x)|| (($mon,$day,$yr,$hr,$min,$ampm)=/^
+        (\d{4})              # year
+           [-\/]?
+        (\d\d?)              # numerical month
+           [-\/]?
+        (\d\d?)              # day
+       (?:
+             (?:\s+|[-:Tt])  # separator before clock
+          (\d\d?):?(\d\d)    # hour:min
+          (?::?(\d\d(?:\.\d*)?))?  # optional seconds (and fractional)
+       )?                    # optional clock
+          \s*
+       ([-+]?\d\d?:?(:?\d\d)?
+        |Z|z)?               # timezone  (Z is "zero meridian", i.e. GMT)
+          \s*$
+      /x)|| (($mon,$day,$yr,$hr,$min,$ampm)=/^
             (\d{2})                # numerical month
                -
             (\d{2})                # day
@@ -75,8 +379,27 @@ $fatpacked{"HTTP/Date.pm"} = '#line '.(1+__LINE__).' "'.__FILE__."\"\n".<<'HTTP_
                \s+
             (\d\d?):(\d\d)([APap][Mm])  # hour:min AM or PM
                \s*$
-          /x)|| return;$mon=$MoY{$mon}|| $MoY{"\u\L$mon"}|| ($mon =~ /^\d\d?$/ && $mon >= 1 && $mon <= 12 && int($mon))|| return;unless (defined$yr){my$cur_mon;($cur_mon,$yr)=(localtime)[4,5];$yr += 1900;$cur_mon++;$yr-- if$mon > $cur_mon}elsif (length($yr)< 3){my$cur_yr=(localtime)[5]+ 1900;my$m=$cur_yr % 100;my$tmp=$yr;$yr += $cur_yr - $m;$m -= $tmp;$yr += ($m > 0)? 100 : -100 if abs($m)> 50}$hr=0 unless defined($hr);$min=0 unless defined($min);$sec=0 unless defined($sec);if ($ampm){$ampm=uc$ampm;$hr=0 if$hr==12 && $ampm eq 'AM';$hr += 12 if$ampm eq 'PM' && $hr!=12}return($yr,$mon,$day,$hr,$min,$sec,$tz)if wantarray;if (defined$tz){$tz="Z" if$tz =~ /^(GMT|UTC?|[-+]?0+)$/}else {$tz=""}return sprintf("%04d-%02d-%02d %02d:%02d:%02d%s",$yr,$mon,$day,$hr,$min,$sec,$tz)}sub time2iso (;$) {my$time=shift;$time=time unless defined$time;my($sec,$min,$hour,$mday,$mon,$year)=localtime($time);sprintf("%04d-%02d-%02d %02d:%02d:%02d",$year+1900,$mon+1,$mday,$hour,$min,$sec)}sub time2isoz (;$) {my$time=shift;$time=time unless defined$time;my($sec,$min,$hour,$mday,$mon,$year)=gmtime($time);sprintf("%04d-%02d-%02d %02d:%02d:%02dZ",$year+1900,$mon+1,$mday,$hour,$min,$sec)}1;
+          /x)|| return;$mon =$MoY{$mon}|| $MoY{"\u\L$mon"}|| ($mon =~ /^\d\d?$/ && $mon >= 1 && $mon <= 12 && int($mon))|| return;unless (defined$yr){my$cur_mon;($cur_mon,$yr)=(localtime)[4,5 ];$yr += 1900;$cur_mon++;$yr-- if$mon > $cur_mon}elsif (length($yr)< 3){my$cur_yr=(localtime)[5]+ 1900;my$m=$cur_yr % 100;my$tmp=$yr;$yr += $cur_yr - $m;$m -= $tmp;$yr += ($m > 0)? 100 : -100 if abs($m)> 50}$hr=0 unless defined($hr);$min=0 unless defined($min);$sec=0 unless defined($sec);if ($ampm){$ampm=uc$ampm;$hr=0 if$hr==12 && $ampm eq 'AM';$hr += 12 if$ampm eq 'PM' && $hr!=12}return ($yr,$mon,$day,$hr,$min,$sec,$tz)if wantarray;if (defined$tz){$tz="Z" if$tz =~ /^(GMT|UTC?|[-+]?0+)$/}else {$tz=""}return sprintf("%04d-%02d-%02d %02d:%02d:%02d%s",$yr,$mon,$day,$hr,$min,$sec,$tz)}sub time2iso (;$) {my$time=shift;$time=time unless defined$time;my ($sec,$min,$hour,$mday,$mon,$year)=localtime($time);sprintf("%04d-%02d-%02d %02d:%02d:%02d",$year + 1900,$mon + 1,$mday,$hour,$min,$sec)}sub time2isoz (;$) {my$time=shift;$time=time unless defined$time;my ($sec,$min,$hour,$mday,$mon,$year)=gmtime($time);sprintf("%04d-%02d-%02d %02d:%02d:%02dZ",$year + 1900,$mon + 1,$mday,$hour,$min,$sec)}1;
 HTTP_DATE
+
+$fatpacked{"Time/Local.pm"} = '#line '.(1+__LINE__).' "'.__FILE__."\"\n".<<'TIME_LOCAL';
+  package Time::Local;use strict;use Carp ();use Exporter;our$VERSION='1.30';use parent 'Exporter';our@EXPORT=qw(timegm timelocal);our@EXPORT_OK=qw(timegm_modern timelocal_modern timegm_nocheck timelocal_nocheck timegm_posix timelocal_posix);my@MonthDays=(31,28,31,30,31,30,31,31,30,31,30,31);my$ThisYear=(localtime())[5];my$Breakpoint=($ThisYear + 50)% 100;my$NextCentury=$ThisYear - $ThisYear % 100;$NextCentury += 100 if$Breakpoint < 50;my$Century=$NextCentury - 100;my$SecOff=0;my (%Options,%Cheat);use constant SECS_PER_MINUTE=>60;use constant SECS_PER_HOUR=>3600;use constant SECS_PER_DAY=>86400;my$MaxDay;if ($] < 5.012000){require Config;my$MaxInt;if ($^O eq 'MacOS'){$MaxInt=(1 << (8 * $Config::Config{ivsize}))- 1}else {$MaxInt =((1 << (8 * $Config::Config{ivsize}- 2))- 1)* 2 + 1}$MaxDay=int(($MaxInt - (SECS_PER_DAY / 2))/ SECS_PER_DAY)- 1}else {$MaxDay=365 * (2**31)}my$Epoc=0;if ($^O eq 'vos'){$Epoc=_daygm(0,0,0,1,0,70,4,0)}elsif ($^O eq 'MacOS'){$MaxDay *= 2;$Epoc=693901;$SecOff=timelocal(localtime(0))- timelocal(gmtime(0));$Epoc += _daygm(gmtime(0))}else {$Epoc=_daygm(gmtime(0))}%Cheat=();sub _daygm {return $_[3]+ ($Cheat{pack('ss',@_[4,5 ])}||= do {my$month=($_[4]+ 10)% 12;my$year=$_[5]+ 1900 - int($month / 10);((365 * $year)+ int($year / 4)- int($year / 100)+ int($year / 400)+ int((($month * 306)+ 5)/ 10))- $Epoc})}sub _timegm {my$sec =$SecOff + $_[0]+ (SECS_PER_MINUTE * $_[1])+ (SECS_PER_HOUR * $_[2]);return$sec + (SECS_PER_DAY * &_daygm)}sub timegm {my ($sec,$min,$hour,$mday,$month,$year)=@_;if ($Options{no_year_munging}){$year -= 1900}elsif (!$Options{posix_year}){if ($year >= 1000){$year -= 1900}elsif ($year < 100 and $year >= 0){$year += ($year > $Breakpoint)? $Century : $NextCentury}}unless ($Options{no_range_check}){Carp::croak("Month '$month' out of range 0..11")if$month > 11 or $month < 0;my$md=$MonthDays[$month];++$md if$month==1 && _is_leap_year($year + 1900);Carp::croak("Day '$mday' out of range 1..$md")if$mday > $md or $mday < 1;Carp::croak("Hour '$hour' out of range 0..23")if$hour > 23 or $hour < 0;Carp::croak("Minute '$min' out of range 0..59")if$min > 59 or $min < 0;Carp::croak("Second '$sec' out of range 0..59")if$sec >= 60 or $sec < 0}my$days=_daygm(undef,undef,undef,$mday,$month,$year);unless ($Options{no_range_check}or abs($days)< $MaxDay){my$msg=q{};$msg .= "Day too big - $days > $MaxDay\n" if$days > $MaxDay;$year += 1900;$msg .= "Cannot handle date ($sec, $min, $hour, $mday, $month, $year)";Carp::croak($msg)}return $sec + $SecOff + (SECS_PER_MINUTE * $min)+ (SECS_PER_HOUR * $hour)+ (SECS_PER_DAY * $days)}sub _is_leap_year {return 0 if $_[0]% 4;return 1 if $_[0]% 100;return 0 if $_[0]% 400;return 1}sub timegm_nocheck {local$Options{no_range_check}=1;return&timegm}sub timegm_modern {local$Options{no_year_munging}=1;return&timegm}sub timegm_posix {local$Options{posix_year}=1;return&timegm}sub timelocal {my$ref_t=&timegm;my$loc_for_ref_t=_timegm(localtime($ref_t));my$zone_off=$loc_for_ref_t - $ref_t or return$loc_for_ref_t;my$loc_t=$ref_t - $zone_off;my$dst_off=$ref_t - _timegm(localtime($loc_t));if (!$dst_off && (($ref_t - SECS_PER_HOUR)- _timegm(localtime($loc_t - SECS_PER_HOUR))< 0)){return$loc_t - SECS_PER_HOUR}$loc_t += $dst_off;return$loc_t if$dst_off > 0;my ($s,$m,$h)=localtime($loc_t);$loc_t -= $dst_off if$s!=$_[0]|| $m!=$_[1]|| $h!=$_[2];return$loc_t}sub timelocal_nocheck {local$Options{no_range_check}=1;return&timelocal}sub timelocal_modern {local$Options{no_year_munging}=1;return&timelocal}sub timelocal_posix {local$Options{posix_year}=1;return&timelocal}1;
+TIME_LOCAL
+
+$fatpacked{"Time/Zone.pm"} = '#line '.(1+__LINE__).' "'.__FILE__."\"\n".<<'TIME_ZONE';
+  package Time::Zone;require 5.002;require Exporter;use Carp;use strict;use vars qw(@ISA @EXPORT $VERSION @tz_local);@ISA=qw(Exporter);@EXPORT=qw(tz2zone tz_local_offset tz_offset tz_name);$VERSION="2.24";sub tz2zone (;$$$) {my($TZ,$time,$isdst)=@_;use vars qw(%tzn_cache);$TZ=defined($ENV{'TZ'})? ($ENV{'TZ'}? $ENV{'TZ'}: 'GMT'): '' unless$TZ;if (!defined$isdst){my$j;$time=time()unless$time;($j,$j,$j,$j,$j,$j,$j,$j,$isdst)=localtime($time)}if (defined$tzn_cache{$TZ}->[$isdst]){return$tzn_cache{$TZ}->[$isdst]}if ($TZ =~ /^
+  		    ( [^:\d+\-,] {3,} )
+  		    ( [+-] ?
+  		      \d {1,2}
+  		      ( : \d {1,2} ) {0,2} 
+  		    )
+  		    ( [^\d+\-,] {3,} )?
+  		    /x){my$dsttz=defined($4)? $4 : $1;$TZ=$isdst ? $dsttz : $1;$tzn_cache{$TZ}=[$1,$dsttz ]}else {$tzn_cache{$TZ}=[$TZ,$TZ ]}return$TZ}sub tz_local_offset (;$) {my ($time)=@_;$time=time()unless$time;my (@l)=localtime($time);my$isdst=$l[8];if (defined($tz_local[$isdst])){return$tz_local[$isdst]}$tz_local[$isdst]=&calc_off($time);return$tz_local[$isdst]}sub calc_off {my ($time)=@_;my (@l)=localtime($time);my (@g)=gmtime($time);my$off;$off=$l[0]- $g[0]+ ($l[1]- $g[1])* 60 + ($l[2]- $g[2])* 3600;if ($l[7]==$g[7]){}elsif ($l[7]==$g[7]+ 1){$off += 86400}elsif ($l[7]==$g[7]- 1){$off -= 86400}elsif ($l[7]< $g[7]){$off += 86400}else {$off -= 86400}return$off}CONFIG: {use vars qw(%dstZone %zoneOff %dstZoneOff %Zone);my@dstZone=("brst"=>-2*3600,"adt"=>-3*3600,"edt"=>-4*3600,"cdt"=>-5*3600,"mdt"=>-6*3600,"pdt"=>-7*3600,"akdt"=>-8*3600,"ydt"=>-8*3600,"hdt"=>-9*3600,"bst"=>+1*3600,"mest"=>+2*3600,"metdst"=>+2*3600,"sst"=>+2*3600,"fst"=>+2*3600,"cest"=>+2*3600,"eest"=>+3*3600,"msd"=>+4*3600,"wadt"=>+8*3600,"kdt"=>+10*3600,"aedt"=>+11*3600,"eadt"=>+11*3600,"nzd"=>+13*3600,"nzdt"=>+13*3600,);my@Zone=("gmt"=>0,"ut"=>0,"utc"=>0,"wet"=>0,"wat"=>-1*3600,"at"=>-2*3600,"fnt"=>-2*3600,"brt"=>-3*3600,"mnt"=>-4*3600,"ewt"=>-4*3600,"ast"=>-4*3600,"est"=>-5*3600,"act"=>-5*3600,"cst"=>-6*3600,"mst"=>-7*3600,"pst"=>-8*3600,"akst"=>-9*3600,"yst"=>-9*3600,"hst"=>-10*3600,"cat"=>-10*3600,"ahst"=>-10*3600,"nt"=>-11*3600,"idlw"=>-12*3600,"cet"=>+1*3600,"mez"=>+1*3600,"ect"=>+1*3600,"met"=>+1*3600,"mewt"=>+1*3600,"swt"=>+1*3600,"set"=>+1*3600,"fwt"=>+1*3600,"eet"=>+2*3600,"ukr"=>+2*3600,"bt"=>+3*3600,"msk"=>+3*3600,"zp4"=>+4*3600,"zp5"=>+5*3600,"zp6"=>+6*3600,"wst"=>+8*3600,"hkt"=>+8*3600,"cct"=>+8*3600,"jst"=>+9*3600,"kst"=>+9*3600,"aest"=>+10*3600,"east"=>+10*3600,"gst"=>+10*3600,"nzt"=>+12*3600,"nzst"=>+12*3600,"idle"=>+12*3600,);%Zone=@Zone;%dstZone=@dstZone;%zoneOff=reverse(@Zone);%dstZoneOff=reverse(@dstZone)}sub tz_offset (;$$) {my ($zone,$time)=@_;return&tz_local_offset($time)unless($zone);$time=time()unless$time;my(@l)=localtime($time);my$dst=$l[8];$zone=lc$zone;if($zone =~ /^(([\-\+])\d\d?)(\d\d)$/){my$v=$2 .$3;return $1 * 3600 + $v * 60}elsif (exists$dstZone{$zone}&& ($dst ||!exists$Zone{$zone})){return$dstZone{$zone}}elsif(exists$Zone{$zone}){return$Zone{$zone}}undef}sub tz_name (;$$) {my ($off,$dst)=@_;$off=tz_offset()unless(defined$off);$dst=(localtime(time))[8]unless(defined$dst);if (exists$dstZoneOff{$off}&& ($dst ||!exists$zoneOff{$off})){return$dstZoneOff{$off}}elsif (exists$zoneOff{$off}){return$zoneOff{$off}}sprintf("%+05d",int($off / 60)* 100 + $off % 60)}1;
+TIME_ZONE
+
+$fatpacked{"TimeDate.pm"} = '#line '.(1+__LINE__).' "'.__FILE__."\"\n".<<'TIMEDATE';
+  package TimeDate;use vars qw($VERSION);$VERSION="1.21";1;
+TIMEDATE
 
 s/^  //mg for values %fatpacked;
 
@@ -155,7 +478,11 @@ tmclean is command line utility for cleanup TimeMachine.
 
     % cpanm App::tmclean
 
-or you can get single packed executable file.
+=head2 Homebrew
+
+    % brew install Songmu/tap/tmclean
+
+=head2 Single Packed Executable
 
     % curl -L https://raw.githubusercontent.com/Songmu/App-tmclean/master/tmclean > /usr/local/bin/tmclean; chmod +x /usr/local/bin/tmclean
 

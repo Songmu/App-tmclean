@@ -2,7 +2,7 @@ package App::tmclean;
 use 5.010;
 use warnings;
 
-use version 0.77; our $VERSION = version->declare("v0.0.3");
+use version 0.77; our $VERSION = version->declare("v0.0.4");
 
 use Getopt::Long qw/GetOptions :config posix_default no_ignore_case bundling auto_help/;
 use Pod::Usage qw/pod2usage/;
