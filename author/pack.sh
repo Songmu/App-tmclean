@@ -3,8 +3,17 @@ set -e
 dst=tmclean
 src=script/$dst
 fatlib=fatlib
+perlversion=5.10.1-vanilla
 
-plenv local 5.10.1-vanilla
+if ! plenv local $perlversion >/dev/null 2>&1; then
+  plenv install 5.10.1 --as $perlversion -j4 -DDEBUGGING=-g
+fi
+plenv local $perlversion
+trap 'rm .perl-version; plenv rehash' EXIT
+
+plenv rehash
+plenv install-cpanm
+cpanm -qn App::FatPacker::Simple
 
 rm -rf $fatlib
 cpanm -L $fatlib -nq --installdeps .
