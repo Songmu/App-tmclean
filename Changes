@@ -1,6 +1,7 @@
 Revision history for Perl extension App-tmclean
 
 {{$NEXT}}
+    - follow changed bundle path on Catalina
 
 v0.0.3 2019-01-02T18:48:51Z
     - trap exception around strptime
